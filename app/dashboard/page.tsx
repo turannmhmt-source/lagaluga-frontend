@@ -1,10 +1,19 @@
 "use client";
-import { useState } from "react";
-import { api } from "@/lib/api";
+export const dynamic = "force-dynamic";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  "https://ffbtiktwzrlzlndfnyzy.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmYnRpa3R3enJsemxuZGZueXp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzNDUwMzgsImV4cCI6MjA5NjkyMTAzOH0.88tvA2bJF3pv3TaUwOMTkn4PFGHjZcI8otUGJhZm8pk"
+);
 
 type Scenario = { id: string; title: string; summary: string; style: string; duration: string; };
 
-export default function DashboardPage() {
+export default function Dashboard() {
+  const [user, setUser] = useState<any>(null);
+  const [credits, setCredits] = useState(3);
   const [url, setUrl] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [scenarios, setScenarios] = useState<Scenario[]|null>(null);
@@ -13,27 +22,49 @@ export default function DashboardPage() {
   const [renderMessage, setRenderMessage] = useState<string|null>(null);
   const [error, setError] = useState<string|null>(null);
   const [format, setFormat] = useState("9:16");
+  const router = useRouter();
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) { router.push("/auth"); return; }
+      setUser(session.user);
+    });
+  }, [router]);
 
   const handleAnalyze = async () => {
     if (!url.trim() || isAnalyzing) return;
     setIsAnalyzing(true); setScenarios(null); setSelectedId(null); setError(null);
     try {
-      const response = await api.post<{scenarios: Scenario[]}>("/projects/analyze", { url });
-      setScenarios(response.data.scenarios);
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/projects/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, format })
+      });
+      if (!res.ok) throw new Error("API hatası");
+      const data = await res.json();
+      setScenarios(data.scenarios);
+      setCredits(c => Math.max(0, c - 1));
     } catch {
-      setError("Backend bağlantısı kurulamadı. Railway servisini kontrol edin.");
+      setError("Analiz sırasında hata oluştu. Lütfen tekrar deneyin.");
     } finally { setIsAnalyzing(false); }
   };
 
   const handleRender = async () => {
     if (!selectedId || isRendering) return;
-    setIsRendering(true); setRenderMessage(null);
+    setIsRendering(true);
     try {
-      await api.post(`/scenarios/${selectedId}/render`);
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/scenarios/${selectedId}/render`, { method: "POST" });
       setRenderMessage("Video kuyruğa alındı! Hazır olduğunda bildirim alacaksınız.");
     } catch { setError("Render başlatılamadı."); }
     finally { setIsRendering(false); }
   };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/auth");
+  };
+
+  if (!user) return <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",fontFamily:"Inter,sans-serif",color:"#EC4899",fontSize:"18px"}}>Yükleniyor...</div>;
 
   const formats = [
     { id: "9:16", label: "9:16", sub: "TikTok / Reels", icon: "📱" },
@@ -42,35 +73,36 @@ export default function DashboardPage() {
   ];
 
   const tools = [
-    { icon: "🎨", label: "AI Nesne Silici", desc: "Görselden nesne kaldır" },
-    { icon: "✏️", label: "Yazı Değiştirici", desc: "Font koruyarak değiştir" },
-    { icon: "💬", label: "Otomatik Altyazı", desc: "AI altyazı eşle" },
-    { icon: "🎵", label: "AI Seslendirme", desc: "Türkçe ses üret" },
+    { icon: "🎨", label: "AI Nesne Silici", desc: "Görselden nesne kaldır", soon: true },
+    { icon: "✏️", label: "Yazı Değiştirici", desc: "Font koruyarak değiştir", soon: true },
+    { icon: "💬", label: "Otomatik Altyazı", desc: "AI altyazı eşle", soon: true },
+    { icon: "🎵", label: "AI Seslendirme", desc: "Türkçe ses üret", soon: true },
   ];
 
   return (
-    <div style={{minHeight:"100vh",background:"#FAFAFA",fontFamily:"Inter,sans-serif"}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0;}`}</style>
+    <div style={{minHeight:"100vh",background:"#F8FAFC",fontFamily:"Inter,sans-serif"}}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');*{box-sizing:border-box;margin:0;padding:0;}`}</style>
 
       {/* NAV */}
-      <nav style={{background:"rgba(255,255,255,0.9)",backdropFilter:"blur(12px)",borderBottom:"1px solid #F1F5F9",padding:"14px 40px",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:100}}>
+      <nav style={{background:"rgba(255,255,255,0.95)",backdropFilter:"blur(12px)",borderBottom:"1px solid #F1F5F9",padding:"14px 40px",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:100}}>
         <div style={{fontSize:"22px",fontWeight:900}}>laga<span style={{color:"#EC4899"}}>luga</span></div>
-        <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
-          <div style={{background:"linear-gradient(135deg,#FFF0F7,#FFF7ED)",border:"1px solid rgba(236,72,153,0.2)",borderRadius:"100px",padding:"4px 14px",fontSize:"13px",color:"#EC4899",fontWeight:600}}>⚡ 3 Kredi</div>
-          <div style={{width:"36px",height:"36px",borderRadius:"50%",background:"linear-gradient(135deg,#EC4899,#F97316)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:700,fontSize:"14px"}}>U</div>
+        <div style={{display:"flex",alignItems:"center",gap:"16px"}}>
+          <div style={{background:"#FFF0F7",border:"1px solid rgba(236,72,153,0.2)",borderRadius:"100px",padding:"6px 16px",fontSize:"13px",color:"#EC4899",fontWeight:700}}>⚡ {credits} Kredi</div>
+          <div style={{fontSize:"13px",color:"#64748B"}}>{user.email}</div>
+          <button onClick={handleLogout} style={{padding:"8px 16px",borderRadius:"8px",border:"1px solid #E2E8F0",background:"#fff",cursor:"pointer",fontSize:"13px",color:"#64748B"}}>Çıkış</button>
         </div>
       </nav>
 
       <div style={{maxWidth:"1100px",margin:"0 auto",padding:"32px 40px"}}>
 
-        {/* FORMAT BUTONLARI */}
+        {/* FORMAT */}
         <div style={{marginBottom:"24px"}}>
-          <div style={{fontSize:"13px",fontWeight:600,color:"#64748B",marginBottom:"10px",textTransform:"uppercase",letterSpacing:"1px"}}>Video Formatı</div>
+          <div style={{fontSize:"12px",fontWeight:700,color:"#94A3B8",marginBottom:"10px",textTransform:"uppercase",letterSpacing:"1px"}}>Video Formatı</div>
           <div style={{display:"flex",gap:"10px"}}>
             {formats.map(f=>(
-              <button key={f.id} onClick={()=>setFormat(f.id)} style={{padding:"10px 20px",borderRadius:"10px",border:`1.5px solid ${format===f.id?"#EC4899":"#E2E8F0"}`,background:format===f.id?"#FFF0F7":"#fff",cursor:"pointer",display:"flex",alignItems:"center",gap:"8px",transition:"all 0.2s"}}>
+              <button key={f.id} onClick={()=>setFormat(f.id)} style={{padding:"10px 20px",borderRadius:"10px",border:`1.5px solid ${format===f.id?"#EC4899":"#E2E8F0"}`,background:format===f.id?"#FFF0F7":"#fff",cursor:"pointer",display:"flex",alignItems:"center",gap:"8px"}}>
                 <span style={{fontSize:"18px"}}>{f.icon}</span>
-                <div style={{textAlign:"left"}}>
+                <div>
                   <div style={{fontSize:"13px",fontWeight:700,color:format===f.id?"#EC4899":"#0F172A"}}>{f.label}</div>
                   <div style={{fontSize:"11px",color:"#94A3B8"}}>{f.sub}</div>
                 </div>
@@ -85,8 +117,8 @@ export default function DashboardPage() {
           <div style={{fontSize:"13px",color:"#94A3B8",marginBottom:"16px"}}>URL girin, AI içeriği analiz edip 3 video senaryosu önersin</div>
           <div style={{display:"flex",gap:"10px"}}>
             <input value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAnalyze()} placeholder="https://sirketiniz.com" style={{flex:1,padding:"12px 16px",borderRadius:"10px",border:"1.5px solid #E2E8F0",fontSize:"14px",outline:"none"}} />
-            <button onClick={handleAnalyze} disabled={!url.trim()||isAnalyzing} style={{padding:"12px 24px",borderRadius:"10px",background:"linear-gradient(135deg,#EC4899,#F97316)",color:"#fff",fontSize:"14px",fontWeight:700,border:"none",cursor:"pointer",whiteSpace:"nowrap"}}>
-              {isAnalyzing?"Analiz ediliyor...":"Analiz Et →"}
+            <button onClick={handleAnalyze} disabled={!url.trim()||isAnalyzing||credits<=0} style={{padding:"12px 24px",borderRadius:"10px",background:credits>0?"linear-gradient(135deg,#EC4899,#F97316)":"#E2E8F0",color:credits>0?"#fff":"#94A3B8",fontSize:"14px",fontWeight:700,border:"none",cursor:credits>0?"pointer":"not-allowed",whiteSpace:"nowrap"}}>
+              {isAnalyzing?"Analiz ediliyor...":credits<=0?"Kredi bitti":"Analiz Et →"}
             </button>
           </div>
           {error&&<div style={{marginTop:"12px",padding:"10px 14px",borderRadius:"8px",background:"#FFF1F2",color:"#E11D48",fontSize:"13px"}}>{error}</div>}
@@ -98,8 +130,8 @@ export default function DashboardPage() {
             <div style={{fontSize:"15px",fontWeight:700,color:"#0F172A",marginBottom:"12px"}}>🎬 Senaryo Önerileri</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"12px"}}>
               {scenarios.map(s=>(
-                <button key={s.id} onClick={()=>setSelectedId(s.id)} style={{padding:"20px",borderRadius:"12px",border:`1.5px solid ${selectedId===s.id?"#EC4899":"#E2E8F0"}`,background:selectedId===s.id?"#FFF0F7":"#fff",cursor:"pointer",textAlign:"left",transition:"all 0.2s"}}>
-                  <div style={{fontSize:"11px",fontWeight:600,color:"#EC4899",textTransform:"uppercase",letterSpacing:"1px",marginBottom:"8px"}}>{s.style} · {s.duration}</div>
+                <button key={s.id} onClick={()=>setSelectedId(s.id)} style={{padding:"20px",borderRadius:"12px",border:`1.5px solid ${selectedId===s.id?"#EC4899":"#E2E8F0"}`,background:selectedId===s.id?"#FFF0F7":"#fff",cursor:"pointer",textAlign:"left"}}>
+                  <div style={{fontSize:"11px",fontWeight:700,color:"#EC4899",textTransform:"uppercase",letterSpacing:"1px",marginBottom:"8px"}}>{s.style} · {s.duration}</div>
                   <div style={{fontSize:"14px",fontWeight:700,color:"#0F172A",marginBottom:"6px"}}>{s.title}</div>
                   <div style={{fontSize:"13px",color:"#64748B",lineHeight:1.6}}>{s.summary}</div>
                 </button>
@@ -115,16 +147,16 @@ export default function DashboardPage() {
         )}
 
         {/* AI ARAÇLAR */}
-        <div style={{marginBottom:"24px"}}>
-          <div style={{fontSize:"13px",fontWeight:600,color:"#64748B",marginBottom:"10px",textTransform:"uppercase",letterSpacing:"1px"}}>AI Sihirli Araçlar</div>
+        <div>
+          <div style={{fontSize:"12px",fontWeight:700,color:"#94A3B8",marginBottom:"10px",textTransform:"uppercase",letterSpacing:"1px"}}>AI Sihirli Araçlar</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"12px"}}>
             {tools.map(t=>(
-              <button key={t.label} style={{padding:"20px",borderRadius:"12px",border:"1px solid #F1F5F9",background:"#fff",cursor:"pointer",textAlign:"left",transition:"all 0.2s",boxShadow:"0 2px 6px rgba(0,0,0,0.03)"}}>
+              <div key={t.label} style={{padding:"20px",borderRadius:"12px",border:"1px solid #F1F5F9",background:"#fff",boxShadow:"0 2px 6px rgba(0,0,0,0.03)"}}>
                 <div style={{fontSize:"28px",marginBottom:"10px"}}>{t.icon}</div>
                 <div style={{fontSize:"13px",fontWeight:700,color:"#0F172A",marginBottom:"4px"}}>{t.label}</div>
-                <div style={{fontSize:"12px",color:"#94A3B8"}}>{t.desc}</div>
-                <div style={{marginTop:"10px",fontSize:"11px",color:"#EC4899",fontWeight:600}}>Yakında →</div>
-              </button>
+                <div style={{fontSize:"12px",color:"#94A3B8",marginBottom:"10px"}}>{t.desc}</div>
+                <div style={{fontSize:"11px",color:"#EC4899",fontWeight:600}}>Yakında →</div>
+              </div>
             ))}
           </div>
         </div>

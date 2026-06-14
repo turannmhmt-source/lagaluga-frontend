@@ -1,12 +1,8 @@
 ﻿"use client";
+export const dynamic = "force-dynamic";
 import { useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 export default function AuthPage() {
   const [mode, setMode] = useState<"login"|"register">("login");
@@ -23,7 +19,7 @@ export default function AuthPage() {
     if (mode === "register") {
       const { error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name } } });
       if (error) setMessage(error.message);
-      else setMessage("✅ Aktivasyon maili gönderildi! E-postanızı kontrol edin.");
+      else setMessage("Aktivasyon maili gönderildi! E-postanızı kontrol edin.");
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) setMessage(error.message);
@@ -33,7 +29,7 @@ export default function AuthPage() {
   }
 
   return (
-    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#FFF0F7,#FFF7ED)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',sans-serif"}}>
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#FFF0F7,#FFF7ED)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Inter,sans-serif"}}>
       <div style={{background:"#fff",borderRadius:"24px",padding:"48px",width:"420px",boxShadow:"0 20px 60px rgba(236,72,153,0.12)"}}>
         <div style={{textAlign:"center",marginBottom:"32px"}}>
           <div style={{fontSize:"28px",fontWeight:900,color:"#0F172A"}}>laga<span style={{color:"#EC4899"}}>luga</span></div>
@@ -53,7 +49,7 @@ export default function AuthPage() {
           <label style={{fontSize:"13px",fontWeight:600,color:"#374151",display:"block",marginBottom:"6px"}}>Şifre</label>
           <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" style={{width:"100%",padding:"12px 16px",borderRadius:"10px",border:"1.5px solid #E5E7EB",fontSize:"14px",outline:"none"}} />
         </div>
-        {message&&<div style={{padding:"12px",borderRadius:"10px",background:message.includes("✅")?"#F0FDF4":"#FFF1F2",color:message.includes("✅")?"#16A34A":"#E11D48",fontSize:"13px",marginBottom:"16px"}}>{message}</div>}
+        {message&&<div style={{padding:"12px",borderRadius:"10px",background:message.includes("Aktivasyon")?"#F0FDF4":"#FFF1F2",color:message.includes("Aktivasyon")?"#16A34A":"#E11D48",fontSize:"13px",marginBottom:"16px"}}>{message}</div>}
         <button onClick={handleSubmit} disabled={loading} style={{width:"100%",padding:"14px",borderRadius:"10px",background:"linear-gradient(135deg,#EC4899,#F97316)",color:"#fff",fontSize:"15px",fontWeight:700,border:"none",cursor:"pointer"}}>
           {loading?"Yükleniyor...":(mode==="login"?"Giriş Yap":"Hesap Oluştur")}
         </button>

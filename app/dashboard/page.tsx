@@ -1,6 +1,6 @@
 "use client";
 export const dynamic = "force-dynamic";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 
@@ -8,6 +8,8 @@ const supabase = createClient(
   "https://ffbtiktwzrlzlndfnyzy.supabase.co",
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmYnRpa3R3enJsemxuZGZueXp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzNDUwMzgsImV4cCI6MjA5NjkyMTAzOH0.88tvA2bJF3pv3TaUwOMTkn4PFGHjZcI8otUGJhZm8pk"
 );
+
+const API = process.env.NEXT_PUBLIC_API_URL || "";
 
 type Scenario = { id: string; title: string; summary: string; style: string; duration: string; };
 
@@ -26,7 +28,10 @@ export default function Dashboard() {
   const [input, setInput] = useState("");
   const [format, setFormat] = useState("9:16-reels");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [taskId, setTaskId] = useState<string | null>(null);
   const [scenarios, setScenarios] = useState<Scenario[] | null>(null);
+  const [scrapeFailed, setScrapeFailed] = useState(false);
+  const [manualDesc, setManualDesc] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isRendering, setIsRendering] = useState(false);
   const [renderMessage, setRenderMessage] = useState<string | null>(null);
@@ -37,6 +42,7 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [uploadedMedia, setUploadedMedia] = useState<{ url: string; type: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pollRef = useRef<any>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -46,27 +52,76 @@ export default function Dashboard() {
     });
   }, [router]);
 
-  const isUrl = (s: string) => s.startsWith("http://") || s.startsWith("https://");
+  const pollTask = useCallback(async (tid: string) => {
+    try {
+      const res = await fetch(`${API}/projects/task/${tid}`);
+      const data = await res.json();
 
-  const handleAnalyze = async () => {
-    if (!input.trim() || isAnalyzing || credits <= 0) return;
+      if (data.status === "completed") {
+        clearInterval(pollRef.current);
+        setIsAnalyzing(false);
+        setScenarios(data.result?.scenarios || []);
+        setCredits(c => Math.max(0, c - 1));
+      } else if (data.status === "scrape_failed") {
+        clearInterval(pollRef.current);
+        setIsAnalyzing(false);
+        setScrapeFailed(true);
+      } else if (data.status === "failed") {
+        clearInterval(pollRef.current);
+        setIsAnalyzing(false);
+        setError("Analiz başarısız oldu. Lütfen tekrar deneyin.");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  const handleAnalyze = async (useManual = false) => {
+    if ((!input.trim() && !useManual) || isAnalyzing || credits <= 0) return;
     setIsAnalyzing(true);
     setScenarios(null); setSelectedId(null); setError(null);
-    setVideos([]); setImages([]); setRenderedVideo(""); setRenderMessage(null);
+    setScrapeFailed(false); setVideos([]); setImages([]);
+    setRenderedVideo(""); setRenderMessage(null); setTaskId(null);
+
+    const isUrl = input.startsWith("http://") || input.startsWith("https://");
+    const urlToSend = isUrl ? input : `topic:${input}`;
+
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/projects/analyze`, {
+      const res = await fetch(`${API}/projects/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: isUrl(input) ? input : `topic:${input}`, format })
+        body: JSON.stringify({
+          url: urlToSend,
+          format,
+          user_id: user?.id || "",
+          manual_description: useManual ? manualDesc : ""
+        })
       });
-      if (!res.ok) throw new Error();
       const data = await res.json();
-      setScenarios(data.scenarios);
-      setCredits(c => Math.max(0, c - 1));
+
+      if (data.task_id) {
+        setTaskId(data.task_id);
+        pollRef.current = setInterval(() => pollTask(data.task_id), 2000);
+        setTimeout(() => {
+          clearInterval(pollRef.current);
+          if (isAnalyzing) {
+            setIsAnalyzing(false);
+            setError("Analiz zaman aşımına uğradı. Lütfen tekrar deneyin.");
+          }
+        }, 60000);
+      } else {
+        setIsAnalyzing(false);
+        setError("Analiz başlatılamadı.");
+      }
     } catch {
-      setError("Analiz sırasında hata oluştu. Lütfen tekrar deneyin.");
-    } finally { setIsAnalyzing(false); }
+      setIsAnalyzing(false);
+      setError("Bağlantı hatası. Lütfen tekrar deneyin.");
+    }
   };
+
+  useEffect(() => {
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, []);
 
   const handleRender = async () => {
     if (!selectedId || isRendering) return;
@@ -74,18 +129,24 @@ export default function Dashboard() {
     setVideos([]); setImages([]); setRenderedVideo(""); setRenderMessage(null);
     const sel = scenarios?.find(s => s.id === selectedId);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/scenarios/${selectedId}/render`, {
+      const res = await fetch(`${API}/scenarios/${selectedId}/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: input, format, title: sel?.title || "", summary: sel?.summary || "", duration: sel?.duration || "0:45" })
+        body: JSON.stringify({
+          url: input, format,
+          title: sel?.title || "",
+          summary: sel?.summary || "",
+          duration: sel?.duration || "0:45"
+        })
       });
       const data = await res.json();
       setRenderMessage(data.message);
       if (data.videos?.length) setVideos(data.videos);
       if (data.images?.length) setImages(data.images);
       if (data.rendered_video) setRenderedVideo(data.rendered_video);
-    } catch { setError("Video üretilemedi. Lütfen tekrar deneyin."); }
-    finally { setIsRendering(false); }
+    } catch {
+      setError("Video üretilemedi. Lütfen tekrar deneyin.");
+    } finally { setIsRendering(false); }
   };
 
   const handleDownload = async (url: string, name: string) => {
@@ -99,21 +160,13 @@ export default function Dashboard() {
     } catch { alert("İndirme başarısız oldu."); }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    const type = file.type.startsWith("video") ? "video" : "image";
-    setUploadedMedia({ url, type });
-  };
-
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push("/auth");
   };
 
   if (!user) return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", fontFamily: "Inter,sans-serif", color: "#EC4899", fontSize: "18px" }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", fontFamily: "Inter,sans-serif", color: "#EC4899" }}>
       Yükleniyor...
     </div>
   );
@@ -121,7 +174,7 @@ export default function Dashboard() {
   const tools = [
     { icon: "🎨", label: "AI Nesne Silici", desc: "Görselden istenmeyen nesne kaldır" },
     { icon: "✏️", label: "Yazı Değiştirici", desc: "Font yapısını koruyarak metin düzenle" },
-    { icon: "💬", label: "Otomatik Altyazı", desc: "AI ile saniyeler içinde altyazı oluştur" },
+    { icon: "💬", label: "Otomatik Altyazı", desc: "AI ile saniyeler içinde altyazı" },
     { icon: "🎵", label: "AI Seslendirme", desc: "Türkçe profesyonel ses üret" },
     { icon: "🎤", label: "Stüdyo Kalitesi", desc: "Amatör sesi profesyonele dönüştür" },
     { icon: "📤", label: "Sosyal Medya", desc: "Direkt paylaş" },
@@ -132,27 +185,28 @@ export default function Dashboard() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        input::placeholder { color: #CBD5E1; }
+        input::placeholder, textarea::placeholder { color: #CBD5E1; }
         .card { transition: transform 0.2s, box-shadow 0.2s; }
         .card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.1); }
-        .media-hover { transition: transform 0.15s; cursor: pointer; }
-        .media-hover:hover { transform: scale(1.02); }
+        .media-item { transition: transform 0.15s; cursor: pointer; }
+        .media-item:hover { transform: scale(1.03); }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+        .skeleton { background: linear-gradient(90deg,#f0f0f0 25%,#e0e0e0 50%,#f0f0f0 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 8px; }
+        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
       `}</style>
 
-      {/* LIGHTBOX */}
       {lightbox && (
         <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
-          <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px", maxWidth: "90vw" }}>
-            <img src={lightbox} alt="" style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: "12px", objectFit: "contain" }} />
+          <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px" }}>
+            <img src={lightbox} alt="" style={{ maxWidth: "90vw", maxHeight: "80vh", borderRadius: "12px", objectFit: "contain" }} />
             <div style={{ display: "flex", gap: "12px" }}>
-              <button onClick={() => handleDownload(lightbox, `gorsel-${Date.now()}.jpg`)} style={{ padding: "10px 24px", borderRadius: "8px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "14px" }}>⬇️ İndir</button>
-              <button onClick={() => setLightbox(null)} style={{ padding: "10px 24px", borderRadius: "8px", background: "rgba(255,255,255,0.15)", color: "#fff", border: "none", cursor: "pointer", fontSize: "14px" }}>✕ Kapat</button>
+              <button onClick={() => handleDownload(lightbox, `gorsel-${Date.now()}.jpg`)} style={{ padding: "10px 24px", borderRadius: "8px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontWeight: 700 }}>⬇️ İndir</button>
+              <button onClick={() => setLightbox(null)} style={{ padding: "10px 24px", borderRadius: "8px", background: "rgba(255,255,255,0.15)", color: "#fff", border: "none", cursor: "pointer" }}>✕ Kapat</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* NAV */}
       <nav style={{ background: "rgba(255,255,255,0.97)", backdropFilter: "blur(12px)", borderBottom: "1px solid #F1F5F9", padding: "14px 40px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ fontSize: "22px", fontWeight: 900, color: "#0F172A" }}>laga<span style={{ color: "#EC4899" }}>luga</span></div>
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
@@ -164,14 +218,13 @@ export default function Dashboard() {
 
       <div style={{ maxWidth: "1100px", margin: "0 auto", padding: "32px 40px" }}>
 
-        {/* FORMAT SEÇİMİ */}
         <div style={{ marginBottom: "24px" }}>
           <div style={{ fontSize: "11px", fontWeight: 700, color: "#94A3B8", marginBottom: "10px", textTransform: "uppercase", letterSpacing: "1.5px" }}>Platform ve Format</div>
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
             {Object.entries(FORMATS).map(([id, f]) => (
               <button key={id} onClick={() => setFormat(id)} style={{ padding: "10px 18px", borderRadius: "10px", border: `1.5px solid ${format === id ? "#EC4899" : "#E2E8F0"}`, background: format === id ? "#FFF0F7" : "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: "8px" }}>
                 <span style={{ fontSize: "18px" }}>{f.icon}</span>
-                <div style={{ textAlign: "left" }}>
+                <div>
                   <div style={{ fontSize: "13px", fontWeight: 700, color: format === id ? "#EC4899" : "#0F172A" }}>{f.label}</div>
                   <div style={{ fontSize: "10px", color: "#94A3B8" }}>{f.sub}</div>
                 </div>
@@ -180,7 +233,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ANALİZ KUTUSU */}
         <div style={{ background: "#fff", borderRadius: "16px", padding: "24px", border: "1px solid #F1F5F9", boxShadow: "0 2px 8px rgba(0,0,0,0.04)", marginBottom: "24px" }}>
           <div style={{ fontSize: "15px", fontWeight: 700, color: "#0F172A", marginBottom: "4px" }}>🔗 URL veya Konu Analizi</div>
           <div style={{ fontSize: "13px", color: "#94A3B8", marginBottom: "16px" }}>İşletmenizin web sitesi linkini veya konu yazın. Yapay zeka siteyi analiz edip hizmetlerinizi tanıtan profesyonel video senaryoları oluşturur.</div>
@@ -189,29 +241,32 @@ export default function Dashboard() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === "Enter" && handleAnalyze()}
-              placeholder="https://sirketiniz.com veya 'İstanbul gezisi'"
+              placeholder="https://sirketiniz.com veya 'seyahat acentesi İstanbul turu'"
               style={{ flex: 1, padding: "12px 16px", borderRadius: "10px", border: "1.5px solid #E2E8F0", fontSize: "14px", outline: "none", color: "#0F172A", background: "#fff" }}
             />
             <button
-              onClick={handleAnalyze}
+              onClick={() => handleAnalyze()}
               disabled={!input.trim() || isAnalyzing || credits <= 0}
-              style={{ padding: "12px 24px", borderRadius: "10px", background: (input.trim() && !isAnalyzing && credits > 0) ? "linear-gradient(135deg,#EC4899,#F97316)" : "#E2E8F0", color: (input.trim() && !isAnalyzing && credits > 0) ? "#fff" : "#94A3B8", fontSize: "14px", fontWeight: 700, border: "none", cursor: (input.trim() && !isAnalyzing && credits > 0) ? "pointer" : "not-allowed", whiteSpace: "nowrap" }}
+              style={{ padding: "12px 24px", borderRadius: "10px", background: (!input.trim() || isAnalyzing || credits <= 0) ? "#E2E8F0" : "linear-gradient(135deg,#EC4899,#F97316)", color: (!input.trim() || isAnalyzing || credits <= 0) ? "#94A3B8" : "#fff", fontSize: "14px", fontWeight: 700, border: "none", cursor: (!input.trim() || isAnalyzing || credits <= 0) ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}
             >
               {isAnalyzing ? "Analiz ediliyor..." : credits <= 0 ? "Kredi bitti" : "Analiz Et →"}
             </button>
           </div>
 
-          {/* MEDYA YÜKLEME */}
-          <div style={{ marginTop: "16px", display: "flex", gap: "10px", alignItems: "center" }}>
-            <input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={handleFileUpload} style={{ display: "none" }} />
-            <button onClick={() => fileInputRef.current?.click()} style={{ padding: "8px 18px", borderRadius: "8px", border: "1.5px dashed #E2E8F0", background: "#FAFAFA", cursor: "pointer", fontSize: "13px", color: "#64748B", fontWeight: 500 }}>
+          <div style={{ marginTop: "12px", display: "flex", gap: "10px", alignItems: "center" }}>
+            <input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={e => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              setUploadedMedia({ url: URL.createObjectURL(file), type: file.type.startsWith("video") ? "video" : "image" });
+            }} style={{ display: "none" }} />
+            <button onClick={() => fileInputRef.current?.click()} style={{ padding: "8px 18px", borderRadius: "8px", border: "1.5px dashed #E2E8F0", background: "#FAFAFA", cursor: "pointer", fontSize: "13px", color: "#64748B" }}>
               📁 Fotoğraf veya Video Yükle
             </button>
             {uploadedMedia && (
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 {uploadedMedia.type === "image"
-                  ? <img src={uploadedMedia.url} alt="" style={{ width: "48px", height: "48px", borderRadius: "8px", objectFit: "cover" }} />
-                  : <video src={uploadedMedia.url} style={{ width: "48px", height: "48px", borderRadius: "8px", objectFit: "cover" }} />}
+                  ? <img src={uploadedMedia.url} alt="" style={{ width: "44px", height: "44px", borderRadius: "8px", objectFit: "cover" }} />
+                  : <video src={uploadedMedia.url} style={{ width: "44px", height: "44px", borderRadius: "8px", objectFit: "cover" }} />}
                 <span style={{ fontSize: "12px", color: "#16A34A", fontWeight: 600 }}>✓ Yüklendi</span>
                 <button onClick={() => setUploadedMedia(null)} style={{ fontSize: "12px", color: "#94A3B8", background: "none", border: "none", cursor: "pointer" }}>✕</button>
               </div>
@@ -221,7 +276,37 @@ export default function Dashboard() {
           {error && <div style={{ marginTop: "12px", padding: "10px 14px", borderRadius: "8px", background: "#FFF1F2", color: "#E11D48", fontSize: "13px" }}>{error}</div>}
         </div>
 
-        {/* SENARYOLAR */}
+        {scrapeFailed && (
+          <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: "16px", padding: "20px", marginBottom: "24px" }}>
+            <div style={{ fontSize: "14px", fontWeight: 700, color: "#C2410C", marginBottom: "8px" }}>⚠️ Site koruması aşılamadı</div>
+            <div style={{ fontSize: "13px", color: "#92400E", marginBottom: "12px" }}>Bu site bot koruması kullanıyor. Lütfen işletmenizi kısaca manuel olarak açıklayın:</div>
+            <textarea
+              value={manualDesc}
+              onChange={e => setManualDesc(e.target.value)}
+              placeholder="Örn: Gaziantep'te seyahat acentesi, uçak bileti, otel rezervasyonu ve tur paketleri sunuyoruz..."
+              style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1.5px solid #FED7AA", fontSize: "13px", color: "#0F172A", outline: "none", minHeight: "80px", resize: "vertical" }}
+            />
+            <button
+              onClick={() => handleAnalyze(true)}
+              disabled={!manualDesc.trim() || isAnalyzing}
+              style={{ marginTop: "12px", padding: "10px 24px", borderRadius: "8px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "14px", fontWeight: 700 }}
+            >
+              Manuel Analiz Et →
+            </button>
+          </div>
+        )}
+
+        {isAnalyzing && !scrapeFailed && (
+          <div style={{ marginBottom: "24px" }}>
+            <div style={{ fontSize: "14px", color: "#94A3B8", marginBottom: "12px" }}>🔍 Site analiz ediliyor, senaryolar hazırlanıyor...</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "12px" }}>
+              {[1, 2, 3].map(i => (
+                <div key={i} className="skeleton" style={{ height: "140px" }} />
+              ))}
+            </div>
+          </div>
+        )}
+
         {scenarios && (
           <div style={{ marginBottom: "24px" }}>
             <div style={{ fontSize: "15px", fontWeight: 700, color: "#0F172A", marginBottom: "12px" }}>🎬 Video Senaryoları</div>
@@ -240,16 +325,11 @@ export default function Dashboard() {
 
             <div style={{ marginTop: "16px", display: "flex", justifyContent: "flex-end", gap: "12px", alignItems: "center" }}>
               {renderMessage && <div style={{ fontSize: "13px", color: "#16A34A", background: "#F0FDF4", padding: "8px 14px", borderRadius: "8px", border: "1px solid #BBF7D0" }}>{renderMessage}</div>}
-              <button
-                onClick={handleRender}
-                disabled={!selectedId || isRendering}
-                style={{ padding: "12px 32px", borderRadius: "10px", background: (selectedId && !isRendering) ? "linear-gradient(135deg,#EC4899,#F97316)" : "#E2E8F0", color: (selectedId && !isRendering) ? "#fff" : "#94A3B8", fontSize: "14px", fontWeight: 700, border: "none", cursor: (selectedId && !isRendering) ? "pointer" : "not-allowed", boxShadow: (selectedId && !isRendering) ? "0 4px 15px rgba(236,72,153,0.3)" : "none" }}
-              >
+              <button onClick={handleRender} disabled={!selectedId || isRendering} style={{ padding: "12px 32px", borderRadius: "10px", background: (selectedId && !isRendering) ? "linear-gradient(135deg,#EC4899,#F97316)" : "#E2E8F0", color: (selectedId && !isRendering) ? "#fff" : "#94A3B8", fontSize: "14px", fontWeight: 700, border: "none", cursor: (selectedId && !isRendering) ? "pointer" : "not-allowed", boxShadow: (selectedId && !isRendering) ? "0 4px 15px rgba(236,72,153,0.3)" : "none" }}>
                 {isRendering ? "⏳ Video hazırlanıyor..." : "🎬 Video Üret"}
               </button>
             </div>
 
-            {/* HAZIRLANAN VİDEO */}
             {renderedVideo && (
               <div style={{ marginTop: "24px", background: "#F0FDF4", borderRadius: "16px", padding: "24px", border: "1px solid #BBF7D0" }}>
                 <div style={{ fontSize: "15px", fontWeight: 700, color: "#0F172A", marginBottom: "16px" }}>✅ Hazırlanan Video</div>
@@ -259,20 +339,19 @@ export default function Dashboard() {
                     <button onClick={() => handleDownload(renderedVideo, `lagaluga-${Date.now()}.mp4`)} style={{ padding: "12px 28px", borderRadius: "10px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "14px", fontWeight: 700 }}>
                       ⬇️ Bilgisayara İndir
                     </button>
-                    <div style={{ fontSize: "12px", color: "#64748B", textAlign: "center" }}>MP4 formatında</div>
+                    <div style={{ fontSize: "12px", color: "#64748B" }}>MP4 formatında kaydedilir.</div>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* STOK VİDEOLAR */}
             {videos.length > 0 && (
               <div style={{ marginTop: "24px" }}>
                 <div style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A", marginBottom: "12px" }}>🎥 Stok Videolar ({videos.length})</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: "12px" }}>
                   {videos.map((v, i) => (
                     <div key={i} className="card" style={{ borderRadius: "12px", overflow: "hidden", border: "1px solid #F1F5F9", background: "#fff" }}>
-                      <video controls style={{ width: "100%", height: "140px", objectFit: "cover", display: "block" }} src={v} />
+                      <video controls style={{ width: "100%", height: "130px", objectFit: "cover", display: "block" }} src={v} />
                       <div style={{ padding: "8px" }}>
                         <button onClick={() => handleDownload(v, `stok-${i + 1}.mp4`)} style={{ width: "100%", padding: "6px", borderRadius: "6px", background: "#FFF0F7", color: "#EC4899", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: 600 }}>⬇️ İndir</button>
                       </div>
@@ -282,13 +361,12 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* STOK GÖRSELLER */}
             {images.length > 0 && (
               <div style={{ marginTop: "24px" }}>
                 <div style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A", marginBottom: "8px" }}>🖼️ Stok Görseller ({images.length}) — tıklayarak büyütün</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: "10px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: "10px" }}>
                   {images.map((img, i) => (
-                    <div key={i} className="media-hover" onClick={() => setLightbox(img)} style={{ borderRadius: "10px", overflow: "hidden", border: "1px solid #F1F5F9", height: "120px" }}>
+                    <div key={i} className="media-item" onClick={() => setLightbox(img)} style={{ borderRadius: "10px", overflow: "hidden", border: "1px solid #F1F5F9", height: "110px" }}>
                       <img src={img} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                     </div>
                   ))}
@@ -298,12 +376,11 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* AI ARAÇLAR */}
         <div>
           <div style={{ fontSize: "11px", fontWeight: 700, color: "#94A3B8", marginBottom: "10px", textTransform: "uppercase", letterSpacing: "1.5px" }}>AI Sihirli Araçlar</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: "10px" }}>
             {tools.map(t => (
-              <div key={t.label} className="card" style={{ padding: "18px", borderRadius: "12px", border: "1px solid #F1F5F9", background: "#fff", boxShadow: "0 2px 6px rgba(0,0,0,0.03)", cursor: "default" }}>
+              <div key={t.label} className="card" style={{ padding: "18px", borderRadius: "12px", border: "1px solid #F1F5F9", background: "#fff", boxShadow: "0 2px 6px rgba(0,0,0,0.03)" }}>
                 <div style={{ fontSize: "26px", marginBottom: "10px" }}>{t.icon}</div>
                 <div style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A", marginBottom: "4px" }}>{t.label}</div>
                 <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "10px", lineHeight: 1.5 }}>{t.desc}</div>

@@ -22,6 +22,7 @@ export default function Dashboard() {
   const [renderMessage, setRenderMessage] = useState<string|null>(null);
   const [videos, setVideos] = useState<string[]>([]);
   const [images, setImages] = useState<string[]>([]);
+  const [renderedVideo, setRenderedVideo] = useState<string>("");
   const [error, setError] = useState<string|null>(null);
   const [format, setFormat] = useState("9:16-reels");
   const router = useRouter();
@@ -56,7 +57,7 @@ export default function Dashboard() {
   const handleRender = async () => {
     if (!selectedId || isRendering) return;
     setIsRendering(true);
-    setVideos([]); setImages([]);
+    setVideos([]); setImages([]); setRenderedVideo("");
     const sel = scenarios?.find(s => s.id === selectedId);
     try {
       const res = await fetch(
@@ -64,13 +65,14 @@ export default function Dashboard() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: input, format, title: sel?.title || "", summary: sel?.summary || "" })
+          body: JSON.stringify({ url: input, format, title: sel?.title || "", summary: sel?.summary || "", duration: sel?.duration || "0:30" })
         }
       );
       const data = await res.json();
       setRenderMessage(data.message);
       if (data.videos?.length > 0) setVideos(data.videos);
       if (data.images?.length > 0) setImages(data.images);
+      if (data.rendered_video) setRenderedVideo(data.rendered_video);
     } catch { setError("Medya getirilemedi."); }
     finally { setIsRendering(false); }
   };
@@ -121,7 +123,6 @@ export default function Dashboard() {
 
       <div style={{maxWidth:"1100px",margin:"0 auto",padding:"32px 40px"}}>
 
-        {/* FORMAT */}
         <div style={{marginBottom:"24px"}}>
           <div style={{fontSize:"12px",fontWeight:700,color:"#94A3B8",marginBottom:"10px",textTransform:"uppercase",letterSpacing:"1px"}}>Platform ve Format Seç</div>
           <div style={{display:"flex",gap:"10px",flexWrap:"wrap"}}>
@@ -137,7 +138,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ANALİZ */}
         <div style={{background:"#fff",borderRadius:"16px",padding:"24px",border:"1px solid #F1F5F9",boxShadow:"0 2px 8px rgba(0,0,0,0.04)",marginBottom:"24px"}}>
           <div style={{fontSize:"15px",fontWeight:700,color:"#0F172A",marginBottom:"4px"}}>🔗 URL veya Konu Analizi</div>
           <div style={{fontSize:"13px",color:"#94A3B8",marginBottom:"16px"}}>Web sitesi linki veya konu yazın (örn: "travel istanbul", "teknoloji startup")</div>
@@ -160,7 +160,6 @@ export default function Dashboard() {
           {error&&<div style={{marginTop:"12px",padding:"10px 14px",borderRadius:"8px",background:"#FFF1F2",color:"#E11D48",fontSize:"13px"}}>{error}</div>}
         </div>
 
-        {/* SENARYOLAR */}
         {scenarios&&(
           <div style={{marginBottom:"24px"}}>
             <div style={{fontSize:"15px",fontWeight:700,color:"#0F172A",marginBottom:"12px"}}>🎬 Senaryo Önerileri</div>
@@ -176,9 +175,21 @@ export default function Dashboard() {
             <div style={{marginTop:"16px",display:"flex",justifyContent:"flex-end",gap:"12px",alignItems:"center"}}>
               {renderMessage&&<div style={{fontSize:"13px",color:"#16A34A",background:"#F0FDF4",padding:"8px 14px",borderRadius:"8px"}}>{renderMessage}</div>}
               <button onClick={handleRender} disabled={!selectedId||isRendering} style={{padding:"12px 28px",borderRadius:"10px",background:selectedId?"linear-gradient(135deg,#EC4899,#F97316)":"#E2E8F0",color:selectedId?"#fff":"#94A3B8",fontSize:"14px",fontWeight:700,border:"none",cursor:selectedId?"pointer":"not-allowed"}}>
-                {isRendering?"İşleniyor...":"🎬 Medya Getir"}
+                {isRendering?"Video hazırlanıyor...":"🎬 Video Üret"}
               </button>
             </div>
+
+            {renderedVideo && (
+              <div style={{marginTop:"24px",background:"#F0FDF4",borderRadius:"16px",padding:"20px",border:"1px solid #BBF7D0"}}>
+                <div style={{fontSize:"15px",fontWeight:700,color:"#0F172A",marginBottom:"12px"}}>✅ Hazırlanan Video</div>
+                <video controls style={{width:"100%",maxWidth:"480px",borderRadius:"12px"}} src={renderedVideo} />
+                <div style={{marginTop:"12px"}}>
+                  <a href={renderedVideo} download style={{padding:"10px 24px",borderRadius:"8px",background:"linear-gradient(135deg,#EC4899,#F97316)",color:"#fff",textDecoration:"none",fontSize:"14px",fontWeight:700}}>
+                    ⬇️ İndir
+                  </a>
+                </div>
+              </div>
+            )}
 
             {videos.length > 0 && (
               <div style={{marginTop:"24px"}}>
@@ -204,7 +215,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ARAÇLAR */}
         <div>
           <div style={{fontSize:"12px",fontWeight:700,color:"#94A3B8",marginBottom:"10px",textTransform:"uppercase",letterSpacing:"1px"}}>AI Sihirli Araçlar</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:"12px"}}>

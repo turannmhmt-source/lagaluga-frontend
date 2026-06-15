@@ -88,6 +88,7 @@ export default function Dashboard() {
   const [bgMusic, setBgMusic] = useState("none");
   const [musicVolume, setMusicVolume] = useState(50);
   const [pageScreenshots, setPageScreenshots] = useState<string[]>([]);
+  const [linkCopied, setLinkCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toolFileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<any>(null);
@@ -169,6 +170,13 @@ export default function Dashboard() {
 
       if (data.task_id) {
         setAnalyzeStep("Senaryo hazırlanıyor...");
+        // Krediyi Supabase RPC ile güvenli şekilde düş, yoksa direkt update
+        if (user?.id) {
+          const { error: rpcErr } = await supabase.rpc("use_credit", { uid: user.id });
+          if (rpcErr) {
+            await supabase.from("profiles").update({ credits: Math.max(0, credits - 1) }).eq("id", user.id);
+          }
+        }
         setCredits(c => Math.max(0, c - 1));
         pollRef.current = setInterval(() => pollTask(data.task_id), 3000);
         setTimeout(() => {
@@ -593,9 +601,18 @@ export default function Dashboard() {
                 <div style={{ fontSize: "15px", fontWeight: 700, color: "#0F172A", marginBottom: "16px" }}>✅ Hazırlanan Video</div>
                 <div style={{ display: "flex", gap: "24px", alignItems: "flex-start", flexWrap: "wrap" }}>
                   <video controls style={{ width: "320px", maxWidth: "100%", borderRadius: "12px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)" }} src={renderedVideo} />
-                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", paddingTop: "8px" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", paddingTop: "8px", flex: 1, minWidth: "220px" }}>
                     <button onClick={() => handleDownload(renderedVideo, `lagaluga-${Date.now()}.mp4`)} style={{ padding: "12px 28px", borderRadius: "10px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "14px", fontWeight: 700 }}>⬇️ Bilgisayara İndir</button>
-                    <div style={{ fontSize: "12px", color: "#64748B" }}>MP4 formatında kaydedilir.</div>
+
+                    <div style={{ fontSize: "12px", fontWeight: 700, color: "#64748B", marginTop: "8px", textTransform: "uppercase", letterSpacing: "1px" }}>Paylaş</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                      <button onClick={() => { navigator.clipboard.writeText(renderedVideo); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); }} style={{ padding: "9px 16px", borderRadius: "8px", border: "1.5px solid #E2E8F0", background: linkCopied ? "#F0FDF4" : "#fff", cursor: "pointer", fontSize: "13px", fontWeight: 600, color: linkCopied ? "#16A34A" : "#64748B" }}>{linkCopied ? "✅ Kopyalandı" : "🔗 Linki Kopyala"}</button>
+                      <button onClick={() => window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent("Lagaluga ile oluşturduğum tanıtım videosu: " + renderedVideo)}`, "_blank")} style={{ padding: "9px 16px", borderRadius: "8px", border: "1.5px solid #25D366", background: "#fff", cursor: "pointer", fontSize: "13px", fontWeight: 600, color: "#25D366" }}>💬 WhatsApp</button>
+                      <button onClick={() => window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(renderedVideo)}&text=${encodeURIComponent("Lagaluga AI ile oluşturduğum tanıtım videosu 🎬")}`, "_blank")} style={{ padding: "9px 16px", borderRadius: "8px", border: "1.5px solid #1DA1F2", background: "#fff", cursor: "pointer", fontSize: "13px", fontWeight: 600, color: "#1DA1F2" }}>𝕏 Twitter</button>
+                      <button onClick={() => window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(renderedVideo)}`, "_blank")} style={{ padding: "9px 16px", borderRadius: "8px", border: "1.5px solid #0A66C2", background: "#fff", cursor: "pointer", fontSize: "13px", fontWeight: 600, color: "#0A66C2" }}>in LinkedIn</button>
+                      <button onClick={() => window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(renderedVideo)}`, "_blank")} style={{ padding: "9px 16px", borderRadius: "8px", border: "1.5px solid #1877F2", background: "#fff", cursor: "pointer", fontSize: "13px", fontWeight: 600, color: "#1877F2" }}>f Facebook</button>
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: 1.5 }}>Instagram ve TikTok için videoyu indirip uygulamadan yükleyin.</div>
                   </div>
                 </div>
               </div>

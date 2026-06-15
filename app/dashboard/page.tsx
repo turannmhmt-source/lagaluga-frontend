@@ -20,6 +20,7 @@ export default function Dashboard() {
   const [selectedId, setSelectedId] = useState<string|null>(null);
   const [isRendering, setIsRendering] = useState(false);
   const [renderMessage, setRenderMessage] = useState<string|null>(null);
+  const [pexelsVideos, setPexelsVideos] = useState<string[]>([]);
   const [error, setError] = useState<string|null>(null);
   const [format, setFormat] = useState("9:16-reels");
   const router = useRouter();
@@ -52,9 +53,19 @@ export default function Dashboard() {
   const handleRender = async () => {
     if (!selectedId || isRendering) return;
     setIsRendering(true);
+    setPexelsVideos([]);
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/scenarios/${selectedId}/render`, { method: "POST" });
-      setRenderMessage("Video kuyruğa alındı! Hazır olduğunda bildirim alacaksınız.");
+      const selectedScenario = scenarios?.find(s => s.id === selectedId);
+      const keyword = selectedScenario?.title || "business";
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/scenarios/${selectedId}/render?keyword=${encodeURIComponent(keyword)}`,
+        { method: "POST" }
+      );
+      const data = await res.json();
+      setRenderMessage(data.message);
+      if (data.videos && data.videos.length > 0) {
+        setPexelsVideos(data.videos);
+      }
     } catch { setError("Render başlatılamadı."); }
     finally { setIsRendering(false); }
   };
@@ -142,6 +153,16 @@ export default function Dashboard() {
                 {isRendering?"İşleniyor...":"🎬 Video Üret"}
               </button>
             </div>
+            {pexelsVideos.length > 0 && (
+              <div style={{marginTop:"24px"}}>
+                <div style={{fontSize:"14px",fontWeight:700,color:"#0F172A",marginBottom:"12px"}}>🎥 Önerilen Stok Videolar</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:"12px"}}>
+                  {pexelsVideos.map((v,i)=>(
+                    <video key={i} controls style={{width:"100%",borderRadius:"12px",border:"1px solid #F1F5F9"}} src={v} />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

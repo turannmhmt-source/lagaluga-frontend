@@ -14,14 +14,14 @@ type Scenario = { id: string; title: string; summary: string; style: string; dur
 export default function Dashboard() {
   const [user, setUser] = useState<any>(null);
   const [credits, setCredits] = useState(3);
-  const [url, setUrl] = useState("");
+  const [input, setInput] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [scenarios, setScenarios] = useState<Scenario[]|null>(null);
   const [selectedId, setSelectedId] = useState<string|null>(null);
   const [isRendering, setIsRendering] = useState(false);
   const [renderMessage, setRenderMessage] = useState<string|null>(null);
-  const [pexelsVideos, setPexelsVideos] = useState<string[]>([]);
-  const [mediaImages, setMediaImages] = useState<string[]>([]);
+  const [videos, setVideos] = useState<string[]>([]);
+  const [images, setImages] = useState<string[]>([]);
   const [error, setError] = useState<string|null>(null);
   const [format, setFormat] = useState("9:16-reels");
   const router = useRouter();
@@ -33,14 +33,16 @@ export default function Dashboard() {
     });
   }, [router]);
 
+  const isUrl = (str: string) => str.startsWith("http://") || str.startsWith("https://");
+
   const handleAnalyze = async () => {
-    if (!url.trim() || isAnalyzing) return;
+    if (!input.trim() || isAnalyzing) return;
     setIsAnalyzing(true); setScenarios(null); setSelectedId(null); setError(null);
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/projects/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, format })
+        body: JSON.stringify({ url: isUrl(input) ? input : `topic:${input}`, format })
       });
       if (!res.ok) throw new Error("API hatası");
       const data = await res.json();
@@ -54,26 +56,22 @@ export default function Dashboard() {
   const handleRender = async () => {
     if (!selectedId || isRendering) return;
     setIsRendering(true);
-    setPexelsVideos([]); setMediaImages([]);
-    const selectedScenario = scenarios?.find(s => s.id === selectedId);
+    setVideos([]); setImages([]);
+    const sel = scenarios?.find(s => s.id === selectedId);
     try {
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL}/scenarios/${selectedId}/render`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            url, format,
-            title: selectedScenario?.title || "",
-            summary: selectedScenario?.summary || ""
-          })
+          body: JSON.stringify({ url: input, format, title: sel?.title || "", summary: sel?.summary || "" })
         }
       );
       const data = await res.json();
       setRenderMessage(data.message);
-      if (data.videos?.length > 0) setPexelsVideos(data.videos);
-      if (data.images?.length > 0) setMediaImages(data.images);
-    } catch { setError("Render başlatılamadı."); }
+      if (data.videos?.length > 0) setVideos(data.videos);
+      if (data.images?.length > 0) setImages(data.images);
+    } catch { setError("Medya getirilemedi."); }
     finally { setIsRendering(false); }
   };
 
@@ -82,7 +80,11 @@ export default function Dashboard() {
     router.push("/auth");
   };
 
-  if (!user) return <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",fontFamily:"Inter,sans-serif",color:"#EC4899",fontSize:"18px"}}>Yükleniyor...</div>;
+  if (!user) return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",fontFamily:"Inter,sans-serif",color:"#EC4899",fontSize:"18px"}}>
+      Yükleniyor...
+    </div>
+  );
 
   const formats = [
     { id: "9:16-reels", label: "Reels", sub: "Instagram Reels", icon: "📱" },
@@ -102,10 +104,14 @@ export default function Dashboard() {
 
   return (
     <div style={{minHeight:"100vh",background:"#F8FAFC",fontFamily:"Inter,sans-serif"}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');*{box-sizing:border-box;margin:0;padding:0;}`}</style>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        input::placeholder { color: #CBD5E1; }
+      `}</style>
 
       <nav style={{background:"rgba(255,255,255,0.95)",backdropFilter:"blur(12px)",borderBottom:"1px solid #F1F5F9",padding:"14px 40px",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:100}}>
-        <div style={{fontSize:"22px",fontWeight:900}}>laga<span style={{color:"#EC4899"}}>luga</span></div>
+        <div style={{fontSize:"22px",fontWeight:900,color:"#0F172A"}}>laga<span style={{color:"#EC4899"}}>luga</span></div>
         <div style={{display:"flex",alignItems:"center",gap:"16px"}}>
           <div style={{background:"#FFF0F7",border:"1px solid rgba(236,72,153,0.2)",borderRadius:"100px",padding:"6px 16px",fontSize:"13px",color:"#EC4899",fontWeight:700}}>⚡ {credits} Kredi</div>
           <div style={{fontSize:"13px",color:"#64748B"}}>{user.email}</div>
@@ -115,8 +121,9 @@ export default function Dashboard() {
 
       <div style={{maxWidth:"1100px",margin:"0 auto",padding:"32px 40px"}}>
 
+        {/* FORMAT */}
         <div style={{marginBottom:"24px"}}>
-          <div style={{fontSize:"12px",fontWeight:700,color:"#94A3B8",marginBottom:"10px",textTransform:"uppercase",letterSpacing:"1px"}}>Platform & Format Seç</div>
+          <div style={{fontSize:"12px",fontWeight:700,color:"#94A3B8",marginBottom:"10px",textTransform:"uppercase",letterSpacing:"1px"}}>Platform ve Format Seç</div>
           <div style={{display:"flex",gap:"10px",flexWrap:"wrap"}}>
             {formats.map(f=>(
               <button key={f.id} onClick={()=>setFormat(f.id)} style={{padding:"10px 20px",borderRadius:"10px",border:`1.5px solid ${format===f.id?"#EC4899":"#E2E8F0"}`,background:format===f.id?"#FFF0F7":"#fff",cursor:"pointer",display:"flex",alignItems:"center",gap:"8px"}}>
@@ -130,18 +137,30 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* ANALİZ */}
         <div style={{background:"#fff",borderRadius:"16px",padding:"24px",border:"1px solid #F1F5F9",boxShadow:"0 2px 8px rgba(0,0,0,0.04)",marginBottom:"24px"}}>
           <div style={{fontSize:"15px",fontWeight:700,color:"#0F172A",marginBottom:"4px"}}>🔗 URL veya Konu Analizi</div>
           <div style={{fontSize:"13px",color:"#94A3B8",marginBottom:"16px"}}>Web sitesi linki veya konu yazın (örn: "travel istanbul", "teknoloji startup")</div>
           <div style={{display:"flex",gap:"10px"}}>
-            <input value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAnalyze()} placeholder="https://sirketiniz.com veya 'travel istanbul'" style={{flex:1,padding:"12px 16px",borderRadius:"10px",border:"1.5px solid #E2E8F0",fontSize:"14px",outline:"none"}} />
-            <button onClick={handleAnalyze} disabled={!url.trim()||isAnalyzing||credits<=0} style={{padding:"12px 24px",borderRadius:"10px",background:credits>0?"linear-gradient(135deg,#EC4899,#F97316)":"#E2E8F0",color:credits>0?"#fff":"#94A3B8",fontSize:"14px",fontWeight:700,border:"none",cursor:credits>0?"pointer":"not-allowed",whiteSpace:"nowrap"}}>
+            <input
+              value={input}
+              onChange={e=>setInput(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&handleAnalyze()}
+              placeholder="https://sirketiniz.com veya 'travel istanbul'"
+              style={{flex:1,padding:"12px 16px",borderRadius:"10px",border:"1.5px solid #E2E8F0",fontSize:"14px",outline:"none",color:"#0F172A",background:"#fff"}}
+            />
+            <button
+              onClick={handleAnalyze}
+              disabled={!input.trim()||isAnalyzing||credits<=0}
+              style={{padding:"12px 24px",borderRadius:"10px",background:credits>0?"linear-gradient(135deg,#EC4899,#F97316)":"#E2E8F0",color:credits>0?"#fff":"#94A3B8",fontSize:"14px",fontWeight:700,border:"none",cursor:credits>0?"pointer":"not-allowed",whiteSpace:"nowrap"}}
+            >
               {isAnalyzing?"Analiz ediliyor...":credits<=0?"Kredi bitti":"Analiz Et →"}
             </button>
           </div>
           {error&&<div style={{marginTop:"12px",padding:"10px 14px",borderRadius:"8px",background:"#FFF1F2",color:"#E11D48",fontSize:"13px"}}>{error}</div>}
         </div>
 
+        {/* SENARYOLAR */}
         {scenarios&&(
           <div style={{marginBottom:"24px"}}>
             <div style={{fontSize:"15px",fontWeight:700,color:"#0F172A",marginBottom:"12px"}}>🎬 Senaryo Önerileri</div>
@@ -161,22 +180,22 @@ export default function Dashboard() {
               </button>
             </div>
 
-            {pexelsVideos.length > 0 && (
+            {videos.length > 0 && (
               <div style={{marginTop:"24px"}}>
-                <div style={{fontSize:"14px",fontWeight:700,color:"#0F172A",marginBottom:"12px"}}>🎥 Stok Videolar ({pexelsVideos.length})</div>
+                <div style={{fontSize:"14px",fontWeight:700,color:"#0F172A",marginBottom:"12px"}}>🎥 Stok Videolar ({videos.length})</div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:"12px"}}>
-                  {pexelsVideos.map((v,i)=>(
+                  {videos.map((v,i)=>(
                     <video key={i} controls style={{width:"100%",borderRadius:"12px",border:"1px solid #F1F5F9"}} src={v} />
                   ))}
                 </div>
               </div>
             )}
 
-            {mediaImages.length > 0 && (
+            {images.length > 0 && (
               <div style={{marginTop:"24px"}}>
-                <div style={{fontSize:"14px",fontWeight:700,color:"#0F172A",marginBottom:"12px"}}>🖼️ Stok Görseller ({mediaImages.length})</div>
+                <div style={{fontSize:"14px",fontWeight:700,color:"#0F172A",marginBottom:"12px"}}>🖼️ Stok Görseller ({images.length})</div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:"12px"}}>
-                  {mediaImages.map((img,i)=>(
+                  {images.map((img,i)=>(
                     <img key={i} src={img} alt="" style={{width:"100%",borderRadius:"12px",border:"1px solid #F1F5F9",objectFit:"cover",height:"200px"}} />
                   ))}
                 </div>
@@ -185,6 +204,7 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* ARAÇLAR */}
         <div>
           <div style={{fontSize:"12px",fontWeight:700,color:"#94A3B8",marginBottom:"10px",textTransform:"uppercase",letterSpacing:"1px"}}>AI Sihirli Araçlar</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:"12px"}}>

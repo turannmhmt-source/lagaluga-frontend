@@ -25,12 +25,30 @@ const FORMATS: Record<string, { label: string; icon: string; sub: string }> = {
 };
 
 const TOOLS = [
-  { icon: "🎨", label: "AI Nesne Silici", desc: "Görselden istenmeyen nesne kaldır", active: true },
-  { icon: "✏️", label: "Yazı Değiştirici", desc: "Font yapısını koruyarak metin düzenle", active: true },
-  { icon: "💬", label: "Otomatik Altyazı", desc: "AI ile saniyeler içinde altyazı", active: true },
-  { icon: "🎵", label: "AI Seslendirme", desc: "Türkçe profesyonel ses üret", active: true },
-  { icon: "🎤", label: "Stüdyo Kalitesi", desc: "Amatör sesi profesyonele dönüştür", active: true },
-  { icon: "📤", label: "Sosyal Medya", desc: "Yakında aktif olacak", active: false },
+  { key: "object-remove", icon: "🎨", label: "AI Nesne Silici", desc: "Görselden istenmeyen nesne kaldır", accept: "image/*", active: true },
+  { key: "text-edit", icon: "✏️", label: "Yazı Değiştirici", desc: "Font yapısını koruyarak metin düzenle", accept: "image/*", active: true },
+  { key: "subtitle", icon: "💬", label: "Otomatik Altyazı", desc: "AI ile saniyeler içinde altyazı", accept: "video/*", active: true },
+  { key: "voiceover", icon: "🎵", label: "AI Seslendirme", desc: "Türkçe profesyonel ses üret", accept: "", active: true },
+  { key: "studio-audio", icon: "🎤", label: "Stüdyo Kalitesi", desc: "Amatör sesi profesyonele dönüştür", accept: "audio/*,video/*", active: true },
+  { key: "social-export", icon: "📤", label: "Sosyal Medya", desc: "Tek videodan tüm platform formatlarını üret", accept: "image/*,video/*", active: true },
+];
+
+const MUSIC_TRACKS: { id: string; label: string; icon: string }[] = [
+  { id: "none", label: "Yok", icon: "🔇" },
+  { id: "energetic", label: "Enerjik Pop", icon: "🎉" },
+  { id: "corporate", label: "Kurumsal", icon: "💼" },
+  { id: "chill", label: "Sakin Lo-fi", icon: "☕" },
+  { id: "cinematic", label: "Sinematik", icon: "🎬" },
+];
+
+const SUBTITLE_LANGS: { id: string; label: string }[] = [
+  { id: "tr", label: "Türkçe" },
+  { id: "en", label: "İngilizce" },
+];
+
+const VOICEOVER_VOICES: { id: string; label: string }[] = [
+  { id: "tr-TR-EmelNeural", label: "Emel (Kadın)" },
+  { id: "tr-TR-AhmetNeural", label: "Ahmet (Erkek)" },
 ];
 
 export default function Dashboard() {
@@ -58,6 +76,18 @@ export default function Dashboard() {
   const [toolMedia, setToolMedia] = useState<MediaFile | null>(null);
   const [isProcessingTool, setIsProcessingTool] = useState(false);
   const [toolResult, setToolResult] = useState<string>("");
+  const [toolResultUrl, setToolResultUrl] = useState<string>("");
+  const [toolError, setToolError] = useState<string>("");
+  const [objectDesc, setObjectDesc] = useState("");
+  const [oldText, setOldText] = useState("");
+  const [newText, setNewText] = useState("");
+  const [subtitleLang, setSubtitleLang] = useState("tr");
+  const [voiceoverScript, setVoiceoverScript] = useState("");
+  const [voiceoverVoice, setVoiceoverVoice] = useState(VOICEOVER_VOICES[0].id);
+  const [socialFormats, setSocialFormats] = useState<string[]>([]);
+  const [bgMusic, setBgMusic] = useState("none");
+  const [musicVolume, setMusicVolume] = useState(50);
+  const [pageScreenshots, setPageScreenshots] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toolFileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<any>(null);
@@ -105,6 +135,7 @@ export default function Dashboard() {
         clearInterval(pollRef.current); pollRef.current = null;
         setIsAnalyzing(false); setAnalyzeStep("");
         setScenarios(data.result?.scenarios || []);
+        setPageScreenshots(data.result?.screenshots || []);
       } else if (data.status === "scrape_failed") {
         clearInterval(pollRef.current); pollRef.current = null;
         setIsAnalyzing(false); setAnalyzeStep(""); setScrapeFailed(true);
@@ -121,7 +152,7 @@ export default function Dashboard() {
     setIsAnalyzing(true); setAnalyzeStep("Analiz başlatılıyor...");
     setScenarios(null); setSelectedId(null); setError(null);
     setScrapeFailed(false); setVideos([]); setImages([]);
-    setRenderedVideo(""); setRenderMessage(null);
+    setRenderedVideo(""); setRenderMessage(null); setPageScreenshots([]);
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
 
     const isUrl = input.startsWith("http://") || input.startsWith("https://");
@@ -161,7 +192,7 @@ export default function Dashboard() {
       const res = await fetch(`${API}/scenarios/${selectedId}/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: input, format, title: sel?.title || "", summary: sel?.summary || "", duration: sel?.duration || "0:45", add_voice: addVoice, user_media: mediaFiles.map(m => m.url) })
+        body: JSON.stringify({ url: input, format, title: sel?.title || "", summary: sel?.summary || "", duration: sel?.duration || "0:45", add_voice: addVoice, user_media: mediaFiles.map(m => m.url), background_music: bgMusic === "none" ? "" : bgMusic, music_volume: musicVolume, screenshots: pageScreenshots })
       });
       const data = await res.json();
       setRenderMessage(data.message);
@@ -186,18 +217,53 @@ export default function Dashboard() {
     e.target.value = "";
   };
 
-  const handleToolAction = async (toolLabel: string) => {
-    setIsProcessingTool(true); setToolResult("");
-    await new Promise(r => setTimeout(r, 2500));
-    const results: Record<string, string> = {
-      "AI Nesne Silici": "Nesne başarıyla kaldırıldı. Görseli indirebilirsiniz.",
-      "Yazı Değiştirici": "Metin başarıyla değiştirildi.",
-      "Otomatik Altyazı": "Altyazı oluşturuldu ve videoya eklendi.",
-      "AI Seslendirme": "Türkçe seslendirme tamamlandı.",
-      "Stüdyo Kalitesi": "Ses kalitesi profesyonel seviyeye yükseltildi.",
-    };
-    setToolResult(results[toolLabel] || "İşlem tamamlandı.");
-    setIsProcessingTool(false);
+  const openTool = (label: string) => {
+    setActiveTool(label); setToolMedia(null); setToolResult(""); setToolResultUrl(""); setToolError("");
+    setObjectDesc(""); setOldText(""); setNewText(""); setSubtitleLang("tr");
+    setVoiceoverScript(""); setVoiceoverVoice(VOICEOVER_VOICES[0].id); setSocialFormats([]);
+  };
+
+  const closeToolModal = () => {
+    setActiveTool(null); setToolMedia(null); setToolResult(""); setToolResultUrl(""); setToolError("");
+  };
+
+  const handleToolAction = async (tool: typeof TOOLS[number]) => {
+    setIsProcessingTool(true); setToolResult(""); setToolResultUrl(""); setToolError("");
+
+    const form = new FormData();
+    if (toolMedia?.file) form.append("file", toolMedia.file);
+
+    switch (tool.key) {
+      case "object-remove":
+        form.append("description", objectDesc);
+        break;
+      case "text-edit":
+        form.append("old_text", oldText);
+        form.append("new_text", newText);
+        break;
+      case "subtitle":
+        form.append("language", subtitleLang);
+        break;
+      case "voiceover":
+        form.append("text", voiceoverScript);
+        form.append("voice", voiceoverVoice);
+        break;
+      case "social-export":
+        socialFormats.forEach(f => form.append("formats", f));
+        break;
+    }
+
+    try {
+      const res = await fetch(`${API}/tools/${tool.key}`, { method: "POST", body: form });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setToolResult(data.message || "İşlem tamamlandı.");
+      if (data.result_url) setToolResultUrl(data.result_url);
+    } catch (e: any) {
+      setToolError("Bu özellik için backend entegrasyonu yakında tamamlanacak.");
+    } finally {
+      setIsProcessingTool(false);
+    }
   };
 
   const handleDownload = async (url: string, name: string) => {
@@ -243,16 +309,26 @@ export default function Dashboard() {
       )}
 
       {/* AI ARAÇ MODALI */}
-      {activeTool && (
-        <div onClick={() => { setActiveTool(null); setToolMedia(null); setToolResult(""); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+      {activeTool && (() => {
+        const tool = TOOLS.find(t => t.label === activeTool)!;
+        const needsFile = tool.accept !== "";
+        const canSubmit =
+          tool.key === "object-remove" ? !!toolMedia && !!objectDesc.trim() :
+          tool.key === "text-edit" ? !!toolMedia && !!oldText.trim() && !!newText.trim() :
+          tool.key === "voiceover" ? !!voiceoverScript.trim() :
+          tool.key === "social-export" ? !!toolMedia && socialFormats.length > 0 :
+          !!toolMedia;
+
+        return (
+        <div onClick={closeToolModal} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
           <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "32px", width: "600px", maxWidth: "95vw", maxHeight: "90vh", overflow: "auto" }}>
             <div style={{ fontSize: "20px", fontWeight: 800, color: "#0F172A", marginBottom: "20px" }}>
-              {TOOLS.find(t => t.label === activeTool)?.icon} {activeTool}
+              {tool.icon} {activeTool}
             </div>
 
-            <input ref={toolFileRef} type="file" accept="image/*,video/*" onChange={handleToolFileUpload} style={{ display: "none" }} />
+            <input ref={toolFileRef} type="file" accept={tool.accept || "image/*,video/*"} onChange={handleToolFileUpload} style={{ display: "none" }} />
 
-            {!toolMedia ? (
+            {needsFile && (!toolMedia ? (
               <div onClick={() => toolFileRef.current?.click()} style={{ border: "2px dashed #E2E8F0", borderRadius: "16px", padding: "40px", textAlign: "center", cursor: "pointer", marginBottom: "16px" }}>
                 <div style={{ fontSize: "40px", marginBottom: "12px" }}>📁</div>
                 <div style={{ fontSize: "15px", fontWeight: 600, color: "#0F172A" }}>Dosya Yükle</div>
@@ -267,19 +343,84 @@ export default function Dashboard() {
                 </div>
                 <div style={{ display: "flex", gap: "8px" }}>
                   <button onClick={() => toolFileRef.current?.click()} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "13px", color: "#64748B" }}>Değiştir</button>
-                  <button onClick={() => { setToolMedia(null); setToolResult(""); }} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "13px", color: "#E11D48" }}>Kaldır</button>
+                  <button onClick={() => { setToolMedia(null); setToolResult(""); setToolResultUrl(""); setToolError(""); }} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "13px", color: "#E11D48" }}>Kaldır</button>
+                </div>
+              </div>
+            ))}
+
+            {/* TOOL-SPECIFIC FIELDS */}
+            {tool.key === "object-remove" && (
+              <div style={{ marginBottom: "16px" }}>
+                <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748B", marginBottom: "6px" }}>Kaldırılacak nesneyi tarif edin</div>
+                <input value={objectDesc} onChange={e => setObjectDesc(e.target.value)} placeholder="Örn: sol üstteki logo, arka plandaki kişi..." style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #E2E8F0", fontSize: "14px", outline: "none", color: "#0F172A" }} />
+              </div>
+            )}
+
+            {tool.key === "text-edit" && (
+              <div style={{ marginBottom: "16px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                <div>
+                  <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748B", marginBottom: "6px" }}>Eski metin</div>
+                  <input value={oldText} onChange={e => setOldText(e.target.value)} placeholder="Görseldeki mevcut metin" style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #E2E8F0", fontSize: "14px", outline: "none", color: "#0F172A" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748B", marginBottom: "6px" }}>Yeni metin</div>
+                  <input value={newText} onChange={e => setNewText(e.target.value)} placeholder="Yerine gelecek metin" style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #E2E8F0", fontSize: "14px", outline: "none", color: "#0F172A" }} />
                 </div>
               </div>
             )}
 
-            {toolMedia && !toolResult && (
+            {tool.key === "subtitle" && (
+              <div style={{ marginBottom: "16px" }}>
+                <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748B", marginBottom: "6px" }}>Altyazı dili</div>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  {SUBTITLE_LANGS.map(l => (
+                    <button key={l.id} onClick={() => setSubtitleLang(l.id)} style={{ padding: "8px 18px", borderRadius: "8px", border: `1.5px solid ${subtitleLang === l.id ? "#EC4899" : "#E2E8F0"}`, background: subtitleLang === l.id ? "#FFF0F7" : "#fff", color: subtitleLang === l.id ? "#EC4899" : "#64748B", cursor: "pointer", fontSize: "13px", fontWeight: 600 }}>{l.label}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {tool.key === "voiceover" && (
+              <div style={{ marginBottom: "16px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                <div>
+                  <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748B", marginBottom: "6px" }}>Seslendirilecek metin</div>
+                  <textarea value={voiceoverScript} onChange={e => setVoiceoverScript(e.target.value)} placeholder="Seslendirilmesini istediğiniz metni yazın..." style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #E2E8F0", fontSize: "14px", outline: "none", color: "#0F172A", minHeight: "90px", resize: "vertical" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748B", marginBottom: "6px" }}>Ses</div>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    {VOICEOVER_VOICES.map(v => (
+                      <button key={v.id} onClick={() => setVoiceoverVoice(v.id)} style={{ padding: "8px 18px", borderRadius: "8px", border: `1.5px solid ${voiceoverVoice === v.id ? "#EC4899" : "#E2E8F0"}`, background: voiceoverVoice === v.id ? "#FFF0F7" : "#fff", color: voiceoverVoice === v.id ? "#EC4899" : "#64748B", cursor: "pointer", fontSize: "13px", fontWeight: 600 }}>{v.label}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {tool.key === "social-export" && (
+              <div style={{ marginBottom: "16px" }}>
+                <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748B", marginBottom: "8px" }}>Aktarılacak formatları seçin</div>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  {Object.entries(FORMATS).map(([id, f]) => {
+                    const selected = socialFormats.includes(id);
+                    return (
+                      <button key={id} onClick={() => setSocialFormats(prev => selected ? prev.filter(x => x !== id) : [...prev, id])} style={{ padding: "8px 14px", borderRadius: "8px", border: `1.5px solid ${selected ? "#EC4899" : "#E2E8F0"}`, background: selected ? "#FFF0F7" : "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600, color: selected ? "#EC4899" : "#64748B" }}>
+                        <span>{f.icon}</span>{f.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {!toolResult && !toolError && (
               isProcessingTool ? (
                 <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "16px", background: "#F8FAFC", borderRadius: "10px" }}>
                   <div className="spinner" />
                   <span style={{ fontSize: "14px", color: "#64748B" }}>İşleniyor...</span>
                 </div>
               ) : (
-                <button onClick={() => handleToolAction(activeTool)} style={{ width: "100%", padding: "14px", borderRadius: "12px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "15px", fontWeight: 700 }}>
+                <button onClick={() => handleToolAction(tool)} disabled={!canSubmit} style={{ width: "100%", padding: "14px", borderRadius: "12px", background: canSubmit ? "linear-gradient(135deg,#EC4899,#F97316)" : "#E2E8F0", color: canSubmit ? "#fff" : "#94A3B8", border: "none", cursor: canSubmit ? "pointer" : "not-allowed", fontSize: "15px", fontWeight: 700 }}>
                   ✨ {activeTool} Uygula
                 </button>
               )
@@ -288,18 +429,25 @@ export default function Dashboard() {
             {toolResult && (
               <div style={{ padding: "16px", background: "#F0FDF4", borderRadius: "10px", border: "1px solid #BBF7D0", marginTop: "12px" }}>
                 <div style={{ fontSize: "14px", color: "#16A34A", fontWeight: 600 }}>✅ {toolResult}</div>
-                {toolMedia && (
-                  <button onClick={() => handleDownload(toolMedia.url, `duzenlennis-${Date.now()}.${toolMedia.type === "video" ? "mp4" : "jpg"}`)} style={{ marginTop: "10px", padding: "8px 20px", borderRadius: "8px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "13px", fontWeight: 700 }}>
+                {(toolResultUrl || toolMedia) && (
+                  <button onClick={() => handleDownload(toolResultUrl || toolMedia!.url, `duzenlenmis-${Date.now()}.${toolMedia?.type === "video" ? "mp4" : "jpg"}`)} style={{ marginTop: "10px", padding: "8px 20px", borderRadius: "8px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "13px", fontWeight: 700 }}>
                     ⬇️ İndir
                   </button>
                 )}
               </div>
             )}
 
-            <button onClick={() => { setActiveTool(null); setToolMedia(null); setToolResult(""); }} style={{ marginTop: "16px", width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "13px", color: "#64748B" }}>Kapat</button>
+            {toolError && (
+              <div style={{ padding: "16px", background: "#FFF7ED", borderRadius: "10px", border: "1px solid #FED7AA", marginTop: "12px" }}>
+                <div style={{ fontSize: "14px", color: "#C2410C", fontWeight: 600 }}>⏳ {toolError}</div>
+              </div>
+            )}
+
+            <button onClick={closeToolModal} style={{ marginTop: "16px", width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "13px", color: "#64748B" }}>Kapat</button>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       <nav style={{ background: "rgba(255,255,255,0.97)", backdropFilter: "blur(12px)", borderBottom: "1px solid #F1F5F9", padding: "14px 40px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ fontSize: "22px", fontWeight: 900, color: "#0F172A" }}>laga<span style={{ color: "#EC4899" }}>luga</span></div>
@@ -351,6 +499,26 @@ export default function Dashboard() {
           <div style={{ marginTop: "12px", display: "flex", alignItems: "center", gap: "8px" }}>
             <input type="checkbox" id="addVoice" checked={addVoice} onChange={e => setAddVoice(e.target.checked)} style={{ width: "16px", height: "16px", accentColor: "#EC4899", cursor: "pointer" }} />
             <label htmlFor="addVoice" style={{ fontSize: "13px", color: "#64748B", cursor: "pointer", fontWeight: 500 }}>🔊 AI Seslendirme ekle (Türkçe, ücretsiz)</label>
+          </div>
+
+          {/* Arka Plan Müziği */}
+          <div style={{ marginTop: "16px" }}>
+            <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748B", marginBottom: "8px" }}>🎵 Arka Plan Müziği</div>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              {MUSIC_TRACKS.map(m => (
+                <button key={m.id} onClick={() => setBgMusic(m.id)} style={{ padding: "8px 16px", borderRadius: "8px", border: `1.5px solid ${bgMusic === m.id ? "#EC4899" : "#E2E8F0"}`, background: bgMusic === m.id ? "#FFF0F7" : "#fff", color: bgMusic === m.id ? "#EC4899" : "#64748B", cursor: "pointer", fontSize: "13px", fontWeight: 600, display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span>{m.icon}</span>{m.label}
+                </button>
+              ))}
+            </div>
+            {bgMusic !== "none" && (
+              <div style={{ marginTop: "10px", display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "12px", color: "#94A3B8" }}>🔈</span>
+                <input type="range" min={0} max={100} value={musicVolume} onChange={e => setMusicVolume(Number(e.target.value))} style={{ flex: 1, accentColor: "#EC4899" }} />
+                <span style={{ fontSize: "12px", color: "#94A3B8" }}>🔊</span>
+                <span style={{ fontSize: "12px", color: "#64748B", minWidth: "32px", textAlign: "right" }}>{musicVolume}%</span>
+              </div>
+            )}
           </div>
 
           {/* Medya yükleme */}
@@ -469,7 +637,7 @@ export default function Dashboard() {
           <div style={{ fontSize: "11px", fontWeight: 700, color: "#94A3B8", marginBottom: "10px", textTransform: "uppercase", letterSpacing: "1.5px" }}>AI Sihirli Araçlar</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: "10px" }}>
             {TOOLS.map(t => (
-              <div key={t.label} onClick={() => t.active && setActiveTool(t.label)} className="card" style={{ padding: "18px", borderRadius: "12px", border: `1px solid ${t.active ? "#E8F5E9" : "#F1F5F9"}`, background: t.active ? "#FAFFF9" : "#fff", boxShadow: "0 2px 6px rgba(0,0,0,0.03)", cursor: t.active ? "pointer" : "default" }}>
+              <div key={t.label} onClick={() => t.active && openTool(t.label)} className="card" style={{ padding: "18px", borderRadius: "12px", border: `1px solid ${t.active ? "#E8F5E9" : "#F1F5F9"}`, background: t.active ? "#FAFFF9" : "#fff", boxShadow: "0 2px 6px rgba(0,0,0,0.03)", cursor: t.active ? "pointer" : "default" }}>
                 <div style={{ fontSize: "26px", marginBottom: "10px" }}>{t.icon}</div>
                 <div style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A", marginBottom: "4px" }}>{t.label}</div>
                 <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "10px", lineHeight: 1.5 }}>{t.desc}</div>

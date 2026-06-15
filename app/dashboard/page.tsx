@@ -11,6 +11,15 @@ const supabase = createClient(
 
 type Scenario = { id: string; title: string; summary: string; style: string; duration: string; };
 
+const FORMAT_SPECS: Record<string, {label:string,icon:string,sub:string,width:number,height:number,fps:number}> = {
+  "9:16-reels":  { label:"Reels",   icon:"📱", sub:"1080×1920 · 30fps", width:1080, height:1920, fps:30 },
+  "9:16-tiktok": { label:"TikTok",  icon:"🎵", sub:"1080×1920 · 30fps", width:1080, height:1920, fps:30 },
+  "9:16-story":  { label:"Hikaye",  icon:"⭕", sub:"1080×1920 · 15sn",  width:1080, height:1920, fps:30 },
+  "16:9":        { label:"YouTube", icon:"▶️", sub:"1920×1080 · 30fps", width:1920, height:1080, fps:30 },
+  "1:1":         { label:"Gönderi", icon:"⬛", sub:"1080×1080 · 30fps", width:1080, height:1080, fps:30 },
+  "9:16-shorts": { label:"Shorts",  icon:"🩳", sub:"1080×1920 · 60fps", width:1080, height:1920, fps:60 },
+};
+
 export default function Dashboard() {
   const [user, setUser] = useState<any>(null);
   const [credits, setCredits] = useState(3);
@@ -23,6 +32,7 @@ export default function Dashboard() {
   const [videos, setVideos] = useState<string[]>([]);
   const [images, setImages] = useState<string[]>([]);
   const [renderedVideo, setRenderedVideo] = useState<string>("");
+  const [selectedImage, setSelectedImage] = useState<string|null>(null);
   const [error, setError] = useState<string|null>(null);
   const [format, setFormat] = useState("9:16-reels");
   const router = useRouter();
@@ -77,6 +87,15 @@ export default function Dashboard() {
     finally { setIsRendering(false); }
   };
 
+  const handleDownload = async (url: string, filename: string) => {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push("/auth");
@@ -88,20 +107,13 @@ export default function Dashboard() {
     </div>
   );
 
-  const formats = [
-    { id: "9:16-reels", label: "Reels", sub: "Instagram Reels", icon: "📱" },
-    { id: "9:16-tiktok", label: "TikTok", sub: "TikTok Video", icon: "🎵" },
-    { id: "9:16-story", label: "Hikaye", sub: "IG/WA Hikaye", icon: "⭕" },
-    { id: "16:9", label: "YouTube", sub: "YouTube Video", icon: "▶️" },
-    { id: "1:1", label: "Gönderi", sub: "IG/LinkedIn", icon: "⬛" },
-    { id: "9:16-shorts", label: "Shorts", sub: "YouTube Shorts", icon: "🩳" },
-  ];
-
   const tools = [
     { icon: "🎨", label: "AI Nesne Silici", desc: "Görselden nesne kaldır" },
     { icon: "✏️", label: "Yazı Değiştirici", desc: "Font koruyarak değiştir" },
     { icon: "💬", label: "Otomatik Altyazı", desc: "AI altyazı eşle" },
     { icon: "🎵", label: "AI Seslendirme", desc: "Türkçe ses üret" },
+    { icon: "🎤", label: "Stüdyo Kalitesi", desc: "Ses kalitesini artır" },
+    { icon: "📤", label: "Sosyal Medya", desc: "Direkt paylaş" },
   ];
 
   return (
@@ -110,7 +122,26 @@ export default function Dashboard() {
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         input::placeholder { color: #CBD5E1; }
+        .media-card:hover { transform: scale(1.02); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+        .media-card { transition: all 0.2s; cursor: pointer; }
       `}</style>
+
+      {/* LIGHTBOX */}
+      {selectedImage && (
+        <div onClick={()=>setSelectedImage(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
+          <div onClick={e=>e.stopPropagation()} style={{position:"relative",maxWidth:"90vw",maxHeight:"90vh"}}>
+            <img src={selectedImage} alt="" style={{maxWidth:"100%",maxHeight:"85vh",borderRadius:"12px",objectFit:"contain"}} />
+            <div style={{display:"flex",gap:"12px",marginTop:"12px",justifyContent:"center"}}>
+              <button onClick={()=>handleDownload(selectedImage,`gorsel-${Date.now()}.jpg`)} style={{padding:"10px 24px",borderRadius:"8px",background:"linear-gradient(135deg,#EC4899,#F97316)",color:"#fff",border:"none",cursor:"pointer",fontWeight:700,fontSize:"14px"}}>
+                ⬇️ İndir
+              </button>
+              <button onClick={()=>setSelectedImage(null)} style={{padding:"10px 24px",borderRadius:"8px",background:"rgba(255,255,255,0.2)",color:"#fff",border:"none",cursor:"pointer",fontSize:"14px"}}>
+                ✕ Kapat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <nav style={{background:"rgba(255,255,255,0.95)",backdropFilter:"blur(12px)",borderBottom:"1px solid #F1F5F9",padding:"14px 40px",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:100}}>
         <div style={{fontSize:"22px",fontWeight:900,color:"#0F172A"}}>laga<span style={{color:"#EC4899"}}>luga</span></div>
@@ -123,21 +154,23 @@ export default function Dashboard() {
 
       <div style={{maxWidth:"1100px",margin:"0 auto",padding:"32px 40px"}}>
 
+        {/* FORMAT */}
         <div style={{marginBottom:"24px"}}>
           <div style={{fontSize:"12px",fontWeight:700,color:"#94A3B8",marginBottom:"10px",textTransform:"uppercase",letterSpacing:"1px"}}>Platform ve Format Seç</div>
           <div style={{display:"flex",gap:"10px",flexWrap:"wrap"}}>
-            {formats.map(f=>(
-              <button key={f.id} onClick={()=>setFormat(f.id)} style={{padding:"10px 20px",borderRadius:"10px",border:`1.5px solid ${format===f.id?"#EC4899":"#E2E8F0"}`,background:format===f.id?"#FFF0F7":"#fff",cursor:"pointer",display:"flex",alignItems:"center",gap:"8px"}}>
+            {Object.entries(FORMAT_SPECS).map(([id, f])=>(
+              <button key={id} onClick={()=>setFormat(id)} style={{padding:"10px 20px",borderRadius:"10px",border:`1.5px solid ${format===id?"#EC4899":"#E2E8F0"}`,background:format===id?"#FFF0F7":"#fff",cursor:"pointer",display:"flex",alignItems:"center",gap:"8px"}}>
                 <span style={{fontSize:"18px"}}>{f.icon}</span>
-                <div>
-                  <div style={{fontSize:"13px",fontWeight:700,color:format===f.id?"#EC4899":"#0F172A"}}>{f.label}</div>
-                  <div style={{fontSize:"11px",color:"#94A3B8"}}>{f.sub}</div>
+                <div style={{textAlign:"left"}}>
+                  <div style={{fontSize:"13px",fontWeight:700,color:format===id?"#EC4899":"#0F172A"}}>{f.label}</div>
+                  <div style={{fontSize:"10px",color:"#94A3B8"}}>{f.sub}</div>
                 </div>
               </button>
             ))}
           </div>
         </div>
 
+        {/* ANALİZ */}
         <div style={{background:"#fff",borderRadius:"16px",padding:"24px",border:"1px solid #F1F5F9",boxShadow:"0 2px 8px rgba(0,0,0,0.04)",marginBottom:"24px"}}>
           <div style={{fontSize:"15px",fontWeight:700,color:"#0F172A",marginBottom:"4px"}}>🔗 URL veya Konu Analizi</div>
           <div style={{fontSize:"13px",color:"#94A3B8",marginBottom:"16px"}}>Web sitesi linki veya konu yazın (örn: "travel istanbul", "teknoloji startup")</div>
@@ -160,6 +193,7 @@ export default function Dashboard() {
           {error&&<div style={{marginTop:"12px",padding:"10px 14px",borderRadius:"8px",background:"#FFF1F2",color:"#E11D48",fontSize:"13px"}}>{error}</div>}
         </div>
 
+        {/* SENARYOLAR */}
         {scenarios&&(
           <div style={{marginBottom:"24px"}}>
             <div style={{fontSize:"15px",fontWeight:700,color:"#0F172A",marginBottom:"12px"}}>🎬 Senaryo Önerileri</div>
@@ -182,11 +216,11 @@ export default function Dashboard() {
             {renderedVideo && (
               <div style={{marginTop:"24px",background:"#F0FDF4",borderRadius:"16px",padding:"20px",border:"1px solid #BBF7D0"}}>
                 <div style={{fontSize:"15px",fontWeight:700,color:"#0F172A",marginBottom:"12px"}}>✅ Hazırlanan Video</div>
-                <video controls style={{width:"100%",maxWidth:"480px",borderRadius:"12px"}} src={renderedVideo} />
-                <div style={{marginTop:"12px"}}>
-                  <a href={renderedVideo} download style={{padding:"10px 24px",borderRadius:"8px",background:"linear-gradient(135deg,#EC4899,#F97316)",color:"#fff",textDecoration:"none",fontSize:"14px",fontWeight:700}}>
-                    ⬇️ İndir
-                  </a>
+                <video controls style={{width:"100%",maxWidth:"360px",maxHeight:"480px",borderRadius:"12px",objectFit:"contain"}} src={renderedVideo} />
+                <div style={{marginTop:"12px",display:"flex",gap:"10px",flexWrap:"wrap"}}>
+                  <button onClick={()=>handleDownload(renderedVideo,`lagaluga-video-${Date.now()}.mp4`)} style={{padding:"10px 24px",borderRadius:"8px",background:"linear-gradient(135deg,#EC4899,#F97316)",color:"#fff",border:"none",cursor:"pointer",fontSize:"14px",fontWeight:700}}>
+                    ⬇️ PC'ye İndir
+                  </button>
                 </div>
               </div>
             )}
@@ -194,9 +228,16 @@ export default function Dashboard() {
             {videos.length > 0 && (
               <div style={{marginTop:"24px"}}>
                 <div style={{fontSize:"14px",fontWeight:700,color:"#0F172A",marginBottom:"12px"}}>🎥 Stok Videolar ({videos.length})</div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:"12px"}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:"12px"}}>
                   {videos.map((v,i)=>(
-                    <video key={i} controls style={{width:"100%",borderRadius:"12px",border:"1px solid #F1F5F9"}} src={v} />
+                    <div key={i} className="media-card" style={{borderRadius:"12px",overflow:"hidden",border:"1px solid #F1F5F9",background:"#fff"}}>
+                      <video controls style={{width:"100%",height:"160px",objectFit:"cover"}} src={v} />
+                      <div style={{padding:"8px"}}>
+                        <button onClick={()=>handleDownload(v,`stok-video-${i+1}.mp4`)} style={{width:"100%",padding:"6px",borderRadius:"6px",background:"#FFF0F7",color:"#EC4899",border:"none",cursor:"pointer",fontSize:"12px",fontWeight:600}}>
+                          ⬇️ İndir
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -204,10 +245,12 @@ export default function Dashboard() {
 
             {images.length > 0 && (
               <div style={{marginTop:"24px"}}>
-                <div style={{fontSize:"14px",fontWeight:700,color:"#0F172A",marginBottom:"12px"}}>🖼️ Stok Görseller ({images.length})</div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:"12px"}}>
+                <div style={{fontSize:"14px",fontWeight:700,color:"#0F172A",marginBottom:"8px"}}>🖼️ Stok Görseller ({images.length}) — tıklayarak büyütün</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"12px"}}>
                   {images.map((img,i)=>(
-                    <img key={i} src={img} alt="" style={{width:"100%",borderRadius:"12px",border:"1px solid #F1F5F9",objectFit:"cover",height:"200px"}} />
+                    <div key={i} className="media-card" onClick={()=>setSelectedImage(img)} style={{borderRadius:"12px",overflow:"hidden",border:"1px solid #F1F5F9"}}>
+                      <img src={img} alt="" style={{width:"100%",height:"160px",objectFit:"cover",display:"block"}} />
+                    </div>
                   ))}
                 </div>
               </div>
@@ -215,9 +258,10 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* ARAÇLAR */}
         <div>
           <div style={{fontSize:"12px",fontWeight:700,color:"#94A3B8",marginBottom:"10px",textTransform:"uppercase",letterSpacing:"1px"}}>AI Sihirli Araçlar</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:"12px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"12px"}}>
             {tools.map(t=>(
               <div key={t.label} style={{padding:"20px",borderRadius:"12px",border:"1px solid #F1F5F9",background:"#fff",boxShadow:"0 2px 6px rgba(0,0,0,0.03)"}}>
                 <div style={{fontSize:"28px",marginBottom:"10px"}}>{t.icon}</div>

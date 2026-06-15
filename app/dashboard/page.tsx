@@ -89,6 +89,11 @@ export default function Dashboard() {
   const [musicVolume, setMusicVolume] = useState(50);
   const [pageScreenshots, setPageScreenshots] = useState<string[]>([]);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchType, setSearchType] = useState<"all"|"videos"|"images">("all");
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchVideos, setSearchVideos] = useState<string[]>([]);
+  const [searchImages, setSearchImages] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toolFileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<any>(null);
@@ -279,6 +284,19 @@ export default function Dashboard() {
       const res = await fetch(url); const blob = await res.blob();
       const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click();
     } catch { alert("İndirme başarısız."); }
+  };
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim() || isSearching) return;
+    setIsSearching(true); setSearchVideos([]); setSearchImages([]);
+    try {
+      const res = await fetch(`${API}/scenarios/search?keyword=${encodeURIComponent(searchQuery)}&type=${searchType}&per_page=12`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setSearchVideos(data.videos || []);
+      setSearchImages(data.images || []);
+    } catch { /* sessiz hata */ }
+    finally { setIsSearching(false); }
   };
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push("/auth"); };
@@ -648,6 +666,63 @@ export default function Dashboard() {
             )}
           </div>
         )}
+
+        {/* GÖRSEL ARAMA MOTORU */}
+        <div style={{ marginBottom: "32px" }}>
+          <div style={{ fontSize: "11px", fontWeight: 700, color: "#94A3B8", marginBottom: "10px", textTransform: "uppercase", letterSpacing: "1.5px" }}>🔍 Telifsiz İçerik Ara</div>
+          <div style={{ background: "#fff", borderRadius: "16px", padding: "20px", border: "1px solid #F1F5F9", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+            <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+              <input
+                value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSearch()}
+                placeholder="Kelime yazın: 'kahve', 'İstanbul', 'teknoloji'..."
+                style={{ flex: 1, padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #E2E8F0", fontSize: "14px", outline: "none", color: "#0F172A" }}
+              />
+              <div style={{ display: "flex", gap: "6px" }}>
+                {(["all","videos","images"] as const).map(t => (
+                  <button key={t} onClick={() => setSearchType(t)} style={{ padding: "10px 14px", borderRadius: "8px", border: `1.5px solid ${searchType===t?"#EC4899":"#E2E8F0"}`, background: searchType===t?"#FFF0F7":"#fff", cursor: "pointer", fontSize: "12px", fontWeight: 600, color: searchType===t?"#EC4899":"#64748B" }}>
+                    {t==="all"?"Tümü":t==="videos"?"🎥 Video":"🖼️ Görsel"}
+                  </button>
+                ))}
+              </div>
+              <button onClick={handleSearch} disabled={!searchQuery.trim()||isSearching} style={{ padding: "10px 20px", borderRadius: "10px", background: (searchQuery.trim()&&!isSearching)?"linear-gradient(135deg,#EC4899,#F97316)":"#E2E8F0", color: (searchQuery.trim()&&!isSearching)?"#fff":"#94A3B8", border: "none", cursor: "pointer", fontSize: "13px", fontWeight: 700, whiteSpace: "nowrap" }}>
+                {isSearching ? <span className="spinner" /> : "Ara →"}
+              </button>
+            </div>
+
+            {(searchVideos.length > 0 || searchImages.length > 0) && (
+              <div>
+                {searchVideos.length > 0 && (
+                  <div style={{ marginBottom: "16px" }}>
+                    <div style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A", marginBottom: "10px" }}>🎥 Videolar ({searchVideos.length})</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: "10px" }}>
+                      {searchVideos.map((v, i) => (
+                        <div key={i} className="card" style={{ borderRadius: "10px", overflow: "hidden", border: "1px solid #F1F5F9", background: "#fff" }}>
+                          <video controls style={{ width: "100%", height: "110px", objectFit: "cover", display: "block" }} src={v} />
+                          <div style={{ padding: "6px" }}>
+                            <button onClick={() => handleDownload(v, `video-${i+1}.mp4`)} style={{ width: "100%", padding: "5px", borderRadius: "6px", background: "#FFF0F7", color: "#EC4899", border: "none", cursor: "pointer", fontSize: "11px", fontWeight: 600 }}>⬇️ İndir</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {searchImages.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A", marginBottom: "10px" }}>🖼️ Görseller ({searchImages.length})</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))", gap: "8px" }}>
+                      {searchImages.map((img, i) => (
+                        <div key={i} className="media-item" onClick={() => setLightbox(img)} style={{ borderRadius: "8px", overflow: "hidden", height: "90px" }}>
+                          <img src={img} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* AI ARAÇLAR */}
         <div>

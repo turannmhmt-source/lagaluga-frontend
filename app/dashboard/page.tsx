@@ -21,6 +21,7 @@ export default function Dashboard() {
   const [isRendering, setIsRendering] = useState(false);
   const [renderMessage, setRenderMessage] = useState<string|null>(null);
   const [pexelsVideos, setPexelsVideos] = useState<string[]>([]);
+  const [mediaImages, setMediaImages] = useState<string[]>([]);
   const [error, setError] = useState<string|null>(null);
   const [format, setFormat] = useState("9:16-reels");
   const router = useRouter();
@@ -53,7 +54,7 @@ export default function Dashboard() {
   const handleRender = async () => {
     if (!selectedId || isRendering) return;
     setIsRendering(true);
-    setPexelsVideos([]);
+    setPexelsVideos([]); setMediaImages([]);
     const selectedScenario = scenarios?.find(s => s.id === selectedId);
     try {
       const res = await fetch(
@@ -62,8 +63,7 @@ export default function Dashboard() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            url: url,
-            format: format,
+            url, format,
             title: selectedScenario?.title || "",
             summary: selectedScenario?.summary || ""
           })
@@ -71,9 +71,8 @@ export default function Dashboard() {
       );
       const data = await res.json();
       setRenderMessage(data.message);
-      if (data.videos && data.videos.length > 0) {
-        setPexelsVideos(data.videos);
-      }
+      if (data.videos?.length > 0) setPexelsVideos(data.videos);
+      if (data.images?.length > 0) setMediaImages(data.images);
     } catch { setError("Render başlatılamadı."); }
     finally { setIsRendering(false); }
   };
@@ -132,10 +131,10 @@ export default function Dashboard() {
         </div>
 
         <div style={{background:"#fff",borderRadius:"16px",padding:"24px",border:"1px solid #F1F5F9",boxShadow:"0 2px 8px rgba(0,0,0,0.04)",marginBottom:"24px"}}>
-          <div style={{fontSize:"15px",fontWeight:700,color:"#0F172A",marginBottom:"4px"}}>🔗 Web Sitesi Analizi</div>
-          <div style={{fontSize:"13px",color:"#94A3B8",marginBottom:"16px"}}>URL girin, AI içeriği analiz edip seçtiğiniz platforma özel 3 video senaryosu önersin</div>
+          <div style={{fontSize:"15px",fontWeight:700,color:"#0F172A",marginBottom:"4px"}}>🔗 URL veya Konu Analizi</div>
+          <div style={{fontSize:"13px",color:"#94A3B8",marginBottom:"16px"}}>Web sitesi linki veya konu yazın (örn: "travel istanbul", "teknoloji startup")</div>
           <div style={{display:"flex",gap:"10px"}}>
-            <input value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAnalyze()} placeholder="https://sirketiniz.com" style={{flex:1,padding:"12px 16px",borderRadius:"10px",border:"1.5px solid #E2E8F0",fontSize:"14px",outline:"none"}} />
+            <input value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAnalyze()} placeholder="https://sirketiniz.com veya 'travel istanbul'" style={{flex:1,padding:"12px 16px",borderRadius:"10px",border:"1.5px solid #E2E8F0",fontSize:"14px",outline:"none"}} />
             <button onClick={handleAnalyze} disabled={!url.trim()||isAnalyzing||credits<=0} style={{padding:"12px 24px",borderRadius:"10px",background:credits>0?"linear-gradient(135deg,#EC4899,#F97316)":"#E2E8F0",color:credits>0?"#fff":"#94A3B8",fontSize:"14px",fontWeight:700,border:"none",cursor:credits>0?"pointer":"not-allowed",whiteSpace:"nowrap"}}>
               {isAnalyzing?"Analiz ediliyor...":credits<=0?"Kredi bitti":"Analiz Et →"}
             </button>
@@ -158,15 +157,27 @@ export default function Dashboard() {
             <div style={{marginTop:"16px",display:"flex",justifyContent:"flex-end",gap:"12px",alignItems:"center"}}>
               {renderMessage&&<div style={{fontSize:"13px",color:"#16A34A",background:"#F0FDF4",padding:"8px 14px",borderRadius:"8px"}}>{renderMessage}</div>}
               <button onClick={handleRender} disabled={!selectedId||isRendering} style={{padding:"12px 28px",borderRadius:"10px",background:selectedId?"linear-gradient(135deg,#EC4899,#F97316)":"#E2E8F0",color:selectedId?"#fff":"#94A3B8",fontSize:"14px",fontWeight:700,border:"none",cursor:selectedId?"pointer":"not-allowed"}}>
-                {isRendering?"İşleniyor...":"🎬 Video Üret"}
+                {isRendering?"İşleniyor...":"🎬 Medya Getir"}
               </button>
             </div>
+
             {pexelsVideos.length > 0 && (
               <div style={{marginTop:"24px"}}>
-                <div style={{fontSize:"14px",fontWeight:700,color:"#0F172A",marginBottom:"12px"}}>🎥 Önerilen Stok Videolar</div>
+                <div style={{fontSize:"14px",fontWeight:700,color:"#0F172A",marginBottom:"12px"}}>🎥 Stok Videolar ({pexelsVideos.length})</div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:"12px"}}>
                   {pexelsVideos.map((v,i)=>(
                     <video key={i} controls style={{width:"100%",borderRadius:"12px",border:"1px solid #F1F5F9"}} src={v} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {mediaImages.length > 0 && (
+              <div style={{marginTop:"24px"}}>
+                <div style={{fontSize:"14px",fontWeight:700,color:"#0F172A",marginBottom:"12px"}}>🖼️ Stok Görseller ({mediaImages.length})</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:"12px"}}>
+                  {mediaImages.map((img,i)=>(
+                    <img key={i} src={img} alt="" style={{width:"100%",borderRadius:"12px",border:"1px solid #F1F5F9",objectFit:"cover",height:"200px"}} />
                   ))}
                 </div>
               </div>

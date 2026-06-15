@@ -54,12 +54,20 @@ export default function Dashboard() {
     if (!selectedId || isRendering) return;
     setIsRendering(true);
     setPexelsVideos([]);
+    const selectedScenario = scenarios?.find(s => s.id === selectedId);
     try {
-      const selectedScenario = scenarios?.find(s => s.id === selectedId);
-      const keyword = selectedScenario?.title || "business";
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/scenarios/${selectedId}/render?keyword=${encodeURIComponent(keyword)}`,
-        { method: "POST" }
+        `${process.env.NEXT_PUBLIC_API_URL}/scenarios/${selectedId}/render`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: url,
+            format: format,
+            title: selectedScenario?.title || "",
+            summary: selectedScenario?.summary || ""
+          })
+        }
       );
       const data = await res.json();
       setRenderMessage(data.message);

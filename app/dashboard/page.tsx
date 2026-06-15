@@ -87,6 +87,7 @@ export default function Dashboard() {
   const [socialFormats, setSocialFormats] = useState<string[]>([]);
   const [bgMusic, setBgMusic] = useState("none");
   const [musicVolume, setMusicVolume] = useState(50);
+  const [pageScreenshots, setPageScreenshots] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toolFileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<any>(null);
@@ -134,6 +135,7 @@ export default function Dashboard() {
         clearInterval(pollRef.current); pollRef.current = null;
         setIsAnalyzing(false); setAnalyzeStep("");
         setScenarios(data.result?.scenarios || []);
+        setPageScreenshots(data.result?.screenshots || []);
       } else if (data.status === "scrape_failed") {
         clearInterval(pollRef.current); pollRef.current = null;
         setIsAnalyzing(false); setAnalyzeStep(""); setScrapeFailed(true);
@@ -150,7 +152,7 @@ export default function Dashboard() {
     setIsAnalyzing(true); setAnalyzeStep("Analiz başlatılıyor...");
     setScenarios(null); setSelectedId(null); setError(null);
     setScrapeFailed(false); setVideos([]); setImages([]);
-    setRenderedVideo(""); setRenderMessage(null);
+    setRenderedVideo(""); setRenderMessage(null); setPageScreenshots([]);
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
 
     const isUrl = input.startsWith("http://") || input.startsWith("https://");
@@ -190,7 +192,7 @@ export default function Dashboard() {
       const res = await fetch(`${API}/scenarios/${selectedId}/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: input, format, title: sel?.title || "", summary: sel?.summary || "", duration: sel?.duration || "0:45", add_voice: addVoice, user_media: mediaFiles.map(m => m.url), background_music: bgMusic === "none" ? "" : bgMusic, music_volume: musicVolume })
+        body: JSON.stringify({ url: input, format, title: sel?.title || "", summary: sel?.summary || "", duration: sel?.duration || "0:45", add_voice: addVoice, user_media: mediaFiles.map(m => m.url), background_music: bgMusic === "none" ? "" : bgMusic, music_volume: musicVolume, screenshots: pageScreenshots })
       });
       const data = await res.json();
       setRenderMessage(data.message);

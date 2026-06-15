@@ -4,9 +4,10 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 
+// Üretim ortamı güvenliği için ortam değişkenleri (Environment Variables) kullanılıyor
 const supabase = createClient(
-  "https://ffbtiktwzrlzlndfnyzy.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmYnRpa3R3enJsemxuZGZueXp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzNDUwMzgsImV4cCI6MjA5NjkyMTAzOH0.88tvA2bJF3pv3TaUwOMTkn4PFGHjZcI8otUGJhZm8pk"
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://ffbtiktwzrlzlndfnyzy.supabase.co",
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmYnRpa3R3enJsemxuZGZueXp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzNDUwMzgsImV4cCI6MjA5NjkyMTAzOH0.88tvA2bJF3pv3TaUwOMTkn4PFGHjZcI8otUGJhZm8pk"
 );
 
 const API = process.env.NEXT_PUBLIC_API_URL || "";
@@ -28,7 +29,7 @@ export default function Dashboard() {
   const [input, setInput] = useState("");
   const [format, setFormat] = useState("9:16-reels");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [taskId, setTaskId] = useState<string | null>(null);
+  const [analyzeStep, setAnalyzeStep] = useState("");
   const [scenarios, setScenarios] = useState<Scenario[] | null>(null);
   const [scrapeFailed, setScrapeFailed] = useState(false);
   const [manualDesc, setManualDesc] = useState("");
@@ -42,47 +43,92 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [uploadedMedia, setUploadedMedia] = useState<{ url: string; type: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Hafıza sızıntılarını ve zaman aşımı çakışmalarını önlemek için referanslar
   const pollRef = useRef<any>(null);
+  const timeoutRef = useRef<any>(null);
   const router = useRouter();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) { router.push("/auth"); return; }
       setUser(session.user);
+      // Kredileri Supabase'den güvenli şekilde çek
+      supabase.from("profiles").select("credits").eq("id", session.user.id).single().then(({ data }) => {
+        if (data?.credits !== undefined) setCredits(data.credits);
+      });
     });
   }, [router]);
 
-  const pollTask = useCallback(async (tid: string) => {
+  // Sayfa kapatıldığında veya değiştiğinde tüm zamanlayıcıları temizle
+  useEffect(() => {
+    return () => { 
+      if (pollRef.current) clearInterval(pollRef.current); 
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+
+  const pollTask = useCallback(async (taskId: string) => {
     try {
-      const res = await fetch(`${API}/projects/task/${tid}`);
+      const res = await fetch(`${API}/projects/task/${taskId}`);
+      if (!res.ok) return;
       const data = await res.json();
 
       if (data.status === "completed") {
-        clearInterval(pollRef.current);
+        if (pollRef.current) clearInterval(pollRef.current);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current); // Başarılıysa zaman aşımını iptal et
         setIsAnalyzing(false);
+        setAnalyzeStep("");
         setScenarios(data.result?.scenarios || []);
-        setCredits(c => Math.max(0, c - 1));
       } else if (data.status === "scrape_failed") {
-        clearInterval(pollRef.current);
+        if (pollRef.current) clearInterval(pollRef.current);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current); // İptal et
         setIsAnalyzing(false);
+        setAnalyzeStep("");
         setScrapeFailed(true);
       } else if (data.status === "failed") {
-        clearInterval(pollRef.current);
+        if (pollRef.current) clearInterval(pollRef.current);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current); // İptal et
         setIsAnalyzing(false);
+        setAnalyzeStep("");
         setError("Analiz başarısız oldu. Lütfen tekrar deneyin.");
+      } else {
+        setAnalyzeStep("Yapay zeka senaryoları hazırlıyor...");
       }
     } catch (e) {
-      console.error(e);
+      console.error("Poll error:", e);
     }
   }, []);
 
   const handleAnalyze = async (useManual = false) => {
     if ((!input.trim() && !useManual) || isAnalyzing || credits <= 0) return;
+
     setIsAnalyzing(true);
+    setAnalyzeStep("Kredi kontrol ediliyor...");
     setScenarios(null); setSelectedId(null); setError(null);
     setScrapeFailed(false); setVideos([]); setImages([]);
-    setRenderedVideo(""); setRenderMessage(null); setTaskId(null);
+    setRenderedVideo(""); setRenderMessage(null);
 
+    // 1. Kredi düşürme (Güvenli Veritabanı Kontrolü - RPC)
+    try {
+      const { data: creditOk, error: creditErr } = await supabase.rpc("deduct_credit", { p_user_id: user?.id });
+      if (creditErr || !creditOk) {
+        setIsAnalyzing(false);
+        setAnalyzeStep("");
+        setError("Yetersiz kredi! Lütfen daha fazla kredi satın alın.");
+        return;
+      }
+      setCredits(c => Math.max(0, c - 1));
+    } catch (e) {
+      console.error("RPC Credit Error:", e);
+      setIsAnalyzing(false);
+      setAnalyzeStep("");
+      setError("Kredi doğrulaması başarısız oldu.");
+      return;
+    }
+
+    // 2. Analiz Başlatma Talebi
+    setAnalyzeStep("Site analiz ediliyor...");
     const isUrl = input.startsWith("http://") || input.startsWith("https://");
     const urlToSend = isUrl ? input : `topic:${input}`;
 
@@ -97,34 +143,37 @@ export default function Dashboard() {
           manual_description: useManual ? manualDesc : ""
         })
       });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
 
-      if (data.task_id) {
-        setTaskId(data.task_id);
-        pollRef.current = setInterval(() => pollTask(data.task_id), 2000);
-        setTimeout(() => {
+      if (!data.task_id) throw new Error("Backend veri kuyruk numarası (task_id) alınamadı.");
+
+      // 3. Polling (Kuyruk Sorgulama) Döngüsünü Başlat
+      setAnalyzeStep("İçerik analiz ediliyor...");
+      pollRef.current = setInterval(() => pollTask(data.task_id), 3000);
+
+      // 60 Saniye Zaman Aşımı Koruması (Hafıza Sızıntısı Engelli)
+      timeoutRef.current = setTimeout(() => {
+        if (pollRef.current) {
           clearInterval(pollRef.current);
-          if (isAnalyzing) {
-            setIsAnalyzing(false);
-            setError("Analiz zaman aşımına uğradı. Lütfen tekrar deneyin.");
-          }
-        }, 60000);
-      } else {
-        setIsAnalyzing(false);
-        setError("Analiz başlatılamadı.");
-      }
-    } catch {
+          setIsAnalyzing(false);
+          setAnalyzeStep("");
+          setError("Analiz işlemi zaman aşımına uğradı. Lütfen tekrar deneyin.");
+        }
+      }, 60000);
+
+    } catch (e: any) {
+      console.error("Analyze error:", e);
       setIsAnalyzing(false);
-      setError("Bağlantı hatası. Lütfen tekrar deneyin.");
+      setAnalyzeStep("");
+      setError(`Analiz başlatılamadı: ${e.message}`);
     }
   };
 
-  useEffect(() => {
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, []);
-
   const handleRender = async () => {
     if (!selectedId || isRendering) return;
+    setError(null); // Eski analiz hatalarını render aşamasında temizle
     setIsRendering(true);
     setVideos([]); setImages([]); setRenderedVideo(""); setRenderMessage(null);
     const sel = scenarios?.find(s => s.id === selectedId);
@@ -190,9 +239,10 @@ export default function Dashboard() {
         .card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.1); }
         .media-item { transition: transform 0.15s; cursor: pointer; }
         .media-item:hover { transform: scale(1.03); }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
-        .skeleton { background: linear-gradient(90deg,#f0f0f0 25%,#e0e0e0 50%,#f0f0f0 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 8px; }
         @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+        .skeleton { background: linear-gradient(90deg,#f0f0f0 25%,#e0e0e0 50%,#f0f0f0 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 8px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner { width: 20px; height: 20px; border: 2px solid rgba(236,72,153,0.3); border-top-color: #EC4899; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
       `}</style>
 
       {lightbox && (
@@ -211,13 +261,14 @@ export default function Dashboard() {
         <div style={{ fontSize: "22px", fontWeight: 900, color: "#0F172A" }}>laga<span style={{ color: "#EC4899" }}>luga</span></div>
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           <div style={{ background: "#FFF0F7", border: "1px solid rgba(236,72,153,0.2)", borderRadius: "100px", padding: "6px 16px", fontSize: "13px", color: "#EC4899", fontWeight: 700 }}>⚡ {credits} Kredi</div>
-          <div style={{ fontSize: "13px", color: "#64748B" }}>{user.email}</div>
+          <div style={{ fontSize: "13px", color: "#64748B" }}>{user?.email}</div>
           <button onClick={handleLogout} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "13px", color: "#64748B" }}>Çıkış</button>
         </div>
       </nav>
 
       <div style={{ maxWidth: "1100px", margin: "0 auto", padding: "32px 40px" }}>
 
+        {/* FORMAT PANELİ */}
         <div style={{ marginBottom: "24px" }}>
           <div style={{ fontSize: "11px", fontWeight: 700, color: "#94A3B8", marginBottom: "10px", textTransform: "uppercase", letterSpacing: "1.5px" }}>Platform ve Format</div>
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
@@ -233,6 +284,7 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* ANALİZ GİRDİ ALANI */}
         <div style={{ background: "#fff", borderRadius: "16px", padding: "24px", border: "1px solid #F1F5F9", boxShadow: "0 2px 8px rgba(0,0,0,0.04)", marginBottom: "24px" }}>
           <div style={{ fontSize: "15px", fontWeight: 700, color: "#0F172A", marginBottom: "4px" }}>🔗 URL veya Konu Analizi</div>
           <div style={{ fontSize: "13px", color: "#94A3B8", marginBottom: "16px" }}>İşletmenizin web sitesi linkini veya konu yazın. Yapay zeka siteyi analiz edip hizmetlerinizi tanıtan profesyonel video senaryoları oluşturur.</div>
@@ -276,10 +328,11 @@ export default function Dashboard() {
           {error && <div style={{ marginTop: "12px", padding: "10px 14px", borderRadius: "8px", background: "#FFF1F2", color: "#E11D48", fontSize: "13px" }}>{error}</div>}
         </div>
 
+        {/* SİTE BOT KORUMASINA TAKILIRSA AÇILACAK MANUEL FORM */}
         {scrapeFailed && (
           <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: "16px", padding: "20px", marginBottom: "24px" }}>
             <div style={{ fontSize: "14px", fontWeight: 700, color: "#C2410C", marginBottom: "8px" }}>⚠️ Site koruması aşılamadı</div>
-            <div style={{ fontSize: "13px", color: "#92400E", marginBottom: "12px" }}>Bu site bot koruması kullanıyor. Lütfen işletmenizi kısaca manuel olarak açıklayın:</div>
+            <div style={{ fontSize: "13px", color: "#92400E", marginBottom: "12px" }}>Bu site bot koruması kullanıyor. Lütfen işletmenizi kısaca açıklayın:</div>
             <textarea
               value={manualDesc}
               onChange={e => setManualDesc(e.target.value)}
@@ -296,17 +349,20 @@ export default function Dashboard() {
           </div>
         )}
 
-        {isAnalyzing && !scrapeFailed && (
+        {/* CANLI YÜKLENİYOR VE ADIM ADIM TAKİP DURUMU (UX SABİTLENDİ) */}
+        {isAnalyzing && (
           <div style={{ marginBottom: "24px" }}>
-            <div style={{ fontSize: "14px", color: "#94A3B8", marginBottom: "12px" }}>🔍 Site analiz ediliyor, senaryolar hazırlanıyor...</div>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
+              <div className="spinner" />
+              <div style={{ fontSize: "14px", color: "#64748B", fontWeight: 600 }}>{analyzeStep || "Analiz ediliyor..."}</div>
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "12px" }}>
-              {[1, 2, 3].map(i => (
-                <div key={i} className="skeleton" style={{ height: "140px" }} />
-              ))}
+              {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: "140px" }} />)}
             </div>
           </div>
         )}
 
+        {/* BAŞARIYLA GELEN SENARYOLAR VE MEDYA PANELİ */}
         {scenarios && (
           <div style={{ marginBottom: "24px" }}>
             <div style={{ fontSize: "15px", fontWeight: 700, color: "#0F172A", marginBottom: "12px" }}>🎬 Video Senaryoları</div>
@@ -330,6 +386,7 @@ export default function Dashboard() {
               </button>
             </div>
 
+            {/* HAZIRLANAN BİRLEŞTİRİLMİŞ VİDEO ÇIKTISI */}
             {renderedVideo && (
               <div style={{ marginTop: "24px", background: "#F0FDF4", borderRadius: "16px", padding: "24px", border: "1px solid #BBF7D0" }}>
                 <div style={{ fontSize: "15px", fontWeight: 700, color: "#0F172A", marginBottom: "16px" }}>✅ Hazırlanan Video</div>
@@ -345,6 +402,7 @@ export default function Dashboard() {
               </div>
             )}
 
+            {/* STOK VİDEOLAR SEKMESİ */}
             {videos.length > 0 && (
               <div style={{ marginTop: "24px" }}>
                 <div style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A", marginBottom: "12px" }}>🎥 Stok Videolar ({videos.length})</div>
@@ -361,6 +419,7 @@ export default function Dashboard() {
               </div>
             )}
 
+            {/* STOK GÖRSELLER SEKMESİ */}
             {images.length > 0 && (
               <div style={{ marginTop: "24px" }}>
                 <div style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A", marginBottom: "8px" }}>🖼️ Stok Görseller ({images.length}) — tıklayarak büyütün</div>
@@ -376,6 +435,7 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* GELECEKTEKİ AI YAN ARAÇLAR PANELI */}
         <div>
           <div style={{ fontSize: "11px", fontWeight: 700, color: "#94A3B8", marginBottom: "10px", textTransform: "uppercase", letterSpacing: "1.5px" }}>AI Sihirli Araçlar</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: "10px" }}>

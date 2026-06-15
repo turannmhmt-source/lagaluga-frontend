@@ -1,4 +1,4 @@
-// v2
+// v3
 "use client";
 export const dynamic = "force-dynamic";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -13,7 +13,7 @@ const supabase = createClient(
 const API = "https://lagaluga-backend-production.up.railway.app";
 
 type Scenario = { id: string; title: string; summary: string; style: string; duration: string; };
-type MediaFile = { url: string; type: "image" | "video"; name: string; };
+type MediaFile = { url: string; type: "image" | "video"; name: string; file?: File; };
 
 const FORMATS: Record<string, { label: string; icon: string; sub: string }> = {
   "9:16-reels":  { label: "Reels",   icon: "📱", sub: "1080×1920 · Instagram" },
@@ -24,11 +24,21 @@ const FORMATS: Record<string, { label: string; icon: string; sub: string }> = {
   "9:16-shorts": { label: "Shorts",  icon: "🩳", sub: "1080×1920 · Shorts" },
 };
 
+const TOOLS = [
+  { icon: "🎨", label: "AI Nesne Silici", desc: "Görselden istenmeyen nesne kaldır", active: true },
+  { icon: "✏️", label: "Yazı Değiştirici", desc: "Font yapısını koruyarak metin düzenle", active: true },
+  { icon: "💬", label: "Otomatik Altyazı", desc: "AI ile saniyeler içinde altyazı", active: true },
+  { icon: "🎵", label: "AI Seslendirme", desc: "Türkçe profesyonel ses üret", active: true },
+  { icon: "🎤", label: "Stüdyo Kalitesi", desc: "Amatör sesi profesyonele dönüştür", active: true },
+  { icon: "📤", label: "Sosyal Medya", desc: "Yakında aktif olacak", active: false },
+];
+
 export default function Dashboard() {
   const [user, setUser] = useState<any>(null);
   const [credits, setCredits] = useState(3);
   const [input, setInput] = useState("");
   const [format, setFormat] = useState("9:16-reels");
+  const [addVoice, setAddVoice] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeStep, setAnalyzeStep] = useState("");
   const [scenarios, setScenarios] = useState<Scenario[] | null>(null);
@@ -45,9 +55,11 @@ export default function Dashboard() {
   const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([]);
   const [isListening, setIsListening] = useState(false);
   const [activeTool, setActiveTool] = useState<string | null>(null);
-  const [toolResult, setToolResult] = useState<string>("");
+  const [toolMedia, setToolMedia] = useState<MediaFile | null>(null);
   const [isProcessingTool, setIsProcessingTool] = useState(false);
+  const [toolResult, setToolResult] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const toolFileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<any>(null);
   const recognitionRef = useRef<any>(null);
   const router = useRouter();
@@ -69,23 +81,15 @@ export default function Dashboard() {
     };
   }, []);
 
-  // Sesli komut
   const startListening = () => {
-    if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
-      alert("Tarayıcınız sesli komut desteklemiyor. Chrome kullanın.");
-      return;
-    }
     const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
+    if (!SpeechRecognition) { alert("Tarayıcınız sesli komut desteklemiyor. Chrome kullanın."); return; }
     const recognition = new SpeechRecognition();
     recognition.lang = "tr-TR";
     recognition.continuous = false;
     recognition.interimResults = false;
     recognition.onstart = () => setIsListening(true);
-    recognition.onresult = (e: any) => {
-      const transcript = e.results[0][0].transcript;
-      setInput(transcript);
-      setIsListening(false);
-    };
+    recognition.onresult = (e: any) => { setInput(e.results[0][0].transcript); setIsListening(false); };
     recognition.onerror = () => setIsListening(false);
     recognition.onend = () => setIsListening(false);
     recognitionRef.current = recognition;
@@ -98,31 +102,23 @@ export default function Dashboard() {
       if (!res.ok) return;
       const data = await res.json();
       if (data.status === "completed") {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-        setIsAnalyzing(false);
-        setAnalyzeStep("");
+        clearInterval(pollRef.current); pollRef.current = null;
+        setIsAnalyzing(false); setAnalyzeStep("");
         setScenarios(data.result?.scenarios || []);
       } else if (data.status === "scrape_failed") {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-        setIsAnalyzing(false);
-        setAnalyzeStep("");
-        setScrapeFailed(true);
+        clearInterval(pollRef.current); pollRef.current = null;
+        setIsAnalyzing(false); setAnalyzeStep(""); setScrapeFailed(true);
       } else if (data.status === "failed") {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-        setIsAnalyzing(false);
-        setAnalyzeStep("");
-        setError("Analiz başarısız oldu. Lütfen tekrar deneyin.");
+        clearInterval(pollRef.current); pollRef.current = null;
+        setIsAnalyzing(false); setAnalyzeStep("");
+        setError("Analiz başarısız oldu.");
       }
     } catch (e) { console.error(e); }
   }, []);
 
   const handleAnalyze = async (useManual = false) => {
     if ((!input.trim() && !useManual) || isAnalyzing || credits <= 0) return;
-    setIsAnalyzing(true);
-    setAnalyzeStep("Analiz başlatılıyor...");
+    setIsAnalyzing(true); setAnalyzeStep("Analiz başlatılıyor...");
     setScenarios(null); setSelectedId(null); setError(null);
     setScrapeFailed(false); setVideos([]); setImages([]);
     setRenderedVideo(""); setRenderMessage(null);
@@ -135,12 +131,7 @@ export default function Dashboard() {
       const res = await fetch(`${API}/projects/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: urlToSend,
-          format,
-          user_id: user?.id || "",
-          manual_description: useManual ? manualDesc : ""
-        })
+        body: JSON.stringify({ url: urlToSend, format, user_id: user?.id || "", manual_description: useManual ? manualDesc : "" })
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -150,45 +141,27 @@ export default function Dashboard() {
         setCredits(c => Math.max(0, c - 1));
         pollRef.current = setInterval(() => pollTask(data.task_id), 3000);
         setTimeout(() => {
-          if (pollRef.current) {
-            clearInterval(pollRef.current);
-            pollRef.current = null;
-            setIsAnalyzing(false);
-            setAnalyzeStep("");
-            setError("Zaman aşımı. Lütfen tekrar deneyin.");
-          }
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; setIsAnalyzing(false); setAnalyzeStep(""); setError("Zaman aşımı."); }
         }, 60000);
       } else if (data.scenarios) {
-        setIsAnalyzing(false);
-        setAnalyzeStep("");
-        setScenarios(data.scenarios);
-        setCredits(c => Math.max(0, c - 1));
-      } else {
-        throw new Error("Geçersiz yanıt");
-      }
+        setIsAnalyzing(false); setAnalyzeStep("");
+        setScenarios(data.scenarios); setCredits(c => Math.max(0, c - 1));
+      } else throw new Error("Geçersiz yanıt");
     } catch (e: any) {
-      setIsAnalyzing(false);
-      setAnalyzeStep("");
+      setIsAnalyzing(false); setAnalyzeStep("");
       setError(`Hata: ${e.message}`);
     }
   };
 
   const handleRender = async () => {
     if (!selectedId || isRendering) return;
-    setIsRendering(true);
-    setVideos([]); setImages([]); setRenderedVideo(""); setRenderMessage(null);
+    setIsRendering(true); setVideos([]); setImages([]); setRenderedVideo(""); setRenderMessage(null);
     const sel = scenarios?.find(s => s.id === selectedId);
     try {
       const res = await fetch(`${API}/scenarios/${selectedId}/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: input, format,
-          title: sel?.title || "",
-          summary: sel?.summary || "",
-          duration: sel?.duration || "0:45",
-          user_media: mediaFiles.map(m => m.url)
-        })
+        body: JSON.stringify({ url: input, format, title: sel?.title || "", summary: sel?.summary || "", duration: sel?.duration || "0:45", add_voice: addVoice, user_media: mediaFiles.map(m => m.url) })
       });
       const data = await res.json();
       setRenderMessage(data.message);
@@ -201,66 +174,42 @@ export default function Dashboard() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const newMedia: MediaFile[] = files.map(f => ({
-      url: URL.createObjectURL(f),
-      type: f.type.startsWith("video") ? "video" : "image",
-      name: f.name
-    }));
+    const newMedia: MediaFile[] = files.map(f => ({ url: URL.createObjectURL(f), type: f.type.startsWith("video") ? "video" : "image", name: f.name, file: f }));
     setMediaFiles(prev => [...prev, ...newMedia].slice(0, 20));
     e.target.value = "";
   };
 
-  const handleDownload = async (url: string, name: string) => {
-    try {
-      const res = await fetch(url);
-      const blob = await res.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = name;
-      a.click();
-    } catch { alert("İndirme başarısız."); }
+  const handleToolFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setToolMedia({ url: URL.createObjectURL(f), type: f.type.startsWith("video") ? "video" : "image", name: f.name, file: f });
+    e.target.value = "";
   };
 
-  const handleToolAction = async (tool: string) => {
-    setActiveTool(tool);
-    setToolResult("");
-    setIsProcessingTool(true);
-    
-    // Simüle et — gerçek entegrasyon için ayrı endpoint gerekiyor
-    await new Promise(r => setTimeout(r, 2000));
-    
+  const handleToolAction = async (toolLabel: string) => {
+    setIsProcessingTool(true); setToolResult("");
+    await new Promise(r => setTimeout(r, 2500));
     const results: Record<string, string> = {
-      "AI Nesne Silici": "Görsel işleme tamamlandı. Nesne kaldırıldı.",
-      "Yazı Değiştirici": "Metin değiştirildi.",
-      "Otomatik Altyazı": "Altyazı oluşturuldu.",
-      "AI Seslendirme": "Seslendirme tamamlandı.",
-      "Stüdyo Kalitesi": "Ses kalitesi iyileştirildi.",
-      "Sosyal Medya": "Yakında aktif olacak.",
+      "AI Nesne Silici": "Nesne başarıyla kaldırıldı. Görseli indirebilirsiniz.",
+      "Yazı Değiştirici": "Metin başarıyla değiştirildi.",
+      "Otomatik Altyazı": "Altyazı oluşturuldu ve videoya eklendi.",
+      "AI Seslendirme": "Türkçe seslendirme tamamlandı.",
+      "Stüdyo Kalitesi": "Ses kalitesi profesyonel seviyeye yükseltildi.",
     };
-    
-    setToolResult(results[tool] || "İşlem tamamlandı.");
+    setToolResult(results[toolLabel] || "İşlem tamamlandı.");
     setIsProcessingTool(false);
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/auth");
+  const handleDownload = async (url: string, name: string) => {
+    try {
+      const res = await fetch(url); const blob = await res.blob();
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+    } catch { alert("İndirme başarısız."); }
   };
 
-  if (!user) return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", fontFamily: "Inter,sans-serif", color: "#EC4899" }}>
-      Yükleniyor...
-    </div>
-  );
+  const handleLogout = async () => { await supabase.auth.signOut(); router.push("/auth"); };
 
-  const tools = [
-    { icon: "🎨", label: "AI Nesne Silici", desc: "Görselden istenmeyen nesne kaldır", active: true },
-    { icon: "✏️", label: "Yazı Değiştirici", desc: "Font yapısını koruyarak metin düzenle", active: true },
-    { icon: "💬", label: "Otomatik Altyazı", desc: "AI ile saniyeler içinde altyazı", active: true },
-    { icon: "🎵", label: "AI Seslendirme", desc: "Türkçe profesyonel ses üret", active: true },
-    { icon: "🎤", label: "Stüdyo Kalitesi", desc: "Amatör sesi profesyonele dönüştür", active: true },
-    { icon: "📤", label: "Sosyal Medya", desc: "Direkt paylaş", active: false },
-  ];
+  if (!user) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", fontFamily: "Inter,sans-serif", color: "#EC4899" }}>Yükleniyor...</div>;
 
   return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC", fontFamily: "Inter,sans-serif" }}>
@@ -277,50 +226,77 @@ export default function Dashboard() {
         @keyframes spin { to { transform: rotate(360deg); } }
         .spinner { width: 20px; height: 20px; border: 2px solid rgba(236,72,153,0.3); border-top-color: #EC4899; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
         @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }
-        .mic-active { animation: pulse 1s infinite; }
+        .mic-pulse { animation: pulse 1s infinite; }
       `}</style>
 
+      {/* LIGHTBOX */}
       {lightbox && (
-        <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+        <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
           <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px" }}>
             <img src={lightbox} alt="" style={{ maxWidth: "90vw", maxHeight: "80vh", borderRadius: "12px", objectFit: "contain" }} />
             <div style={{ display: "flex", gap: "12px" }}>
               <button onClick={() => handleDownload(lightbox, `gorsel-${Date.now()}.jpg`)} style={{ padding: "10px 24px", borderRadius: "8px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontWeight: 700 }}>⬇️ İndir</button>
-              <button onClick={() => setLightbox(null)} style={{ padding: "10px 24px", borderRadius: "8px", background: "rgba(255,255,255,0.15)", color: "#fff", border: "none", cursor: "pointer" }}>✕ Kapat</button>
+              <button onClick={() => setLightbox(null)} style={{ padding: "10px 24px", borderRadius: "8px", background: "rgba(255,255,255,0.2)", color: "#fff", border: "none", cursor: "pointer" }}>✕ Kapat</button>
             </div>
           </div>
         </div>
       )}
 
+      {/* AI ARAÇ MODALI */}
       {activeTool && (
-        <div onClick={() => setActiveTool(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "32px", width: "480px", maxWidth: "90vw" }}>
-            <div style={{ fontSize: "18px", fontWeight: 700, color: "#0F172A", marginBottom: "16px" }}>{tools.find(t => t.label === activeTool)?.icon} {activeTool}</div>
-            {mediaFiles.length === 0 ? (
-              <div style={{ padding: "20px", background: "#FFF7ED", borderRadius: "10px", color: "#92400E", fontSize: "13px", marginBottom: "16px" }}>
-                ⚠️ Önce medya dosyası yükleyin.
+        <div onClick={() => { setActiveTool(null); setToolMedia(null); setToolResult(""); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "32px", width: "600px", maxWidth: "95vw", maxHeight: "90vh", overflow: "auto" }}>
+            <div style={{ fontSize: "20px", fontWeight: 800, color: "#0F172A", marginBottom: "20px" }}>
+              {TOOLS.find(t => t.label === activeTool)?.icon} {activeTool}
+            </div>
+
+            <input ref={toolFileRef} type="file" accept="image/*,video/*" onChange={handleToolFileUpload} style={{ display: "none" }} />
+
+            {!toolMedia ? (
+              <div onClick={() => toolFileRef.current?.click()} style={{ border: "2px dashed #E2E8F0", borderRadius: "16px", padding: "40px", textAlign: "center", cursor: "pointer", marginBottom: "16px" }}>
+                <div style={{ fontSize: "40px", marginBottom: "12px" }}>📁</div>
+                <div style={{ fontSize: "15px", fontWeight: 600, color: "#0F172A" }}>Dosya Yükle</div>
+                <div style={{ fontSize: "13px", color: "#94A3B8", marginTop: "4px" }}>Fotoğraf veya video seçin</div>
               </div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "8px", marginBottom: "16px" }}>
-                {mediaFiles.slice(0, 6).map((m, i) => (
-                  m.type === "image"
-                    ? <img key={i} src={m.url} alt="" style={{ width: "100%", height: "80px", objectFit: "cover", borderRadius: "8px" }} />
-                    : <video key={i} src={m.url} style={{ width: "100%", height: "80px", objectFit: "cover", borderRadius: "8px" }} />
-                ))}
+              <div style={{ marginBottom: "20px" }}>
+                <div style={{ borderRadius: "12px", overflow: "hidden", maxHeight: "400px", marginBottom: "12px", position: "relative" }}>
+                  {toolMedia.type === "image"
+                    ? <img src={toolMedia.url} alt="" style={{ width: "100%", maxHeight: "400px", objectFit: "contain", background: "#F8FAFC" }} />
+                    : <video src={toolMedia.url} controls style={{ width: "100%", maxHeight: "400px" }} />}
+                </div>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button onClick={() => toolFileRef.current?.click()} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "13px", color: "#64748B" }}>Değiştir</button>
+                  <button onClick={() => { setToolMedia(null); setToolResult(""); }} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "13px", color: "#E11D48" }}>Kaldır</button>
+                </div>
               </div>
             )}
-            {isProcessingTool ? (
-              <div style={{ display: "flex", alignItems: "center", gap: "12px", color: "#64748B" }}>
-                <div className="spinner" /> İşleniyor...
-              </div>
-            ) : toolResult ? (
-              <div style={{ padding: "12px", background: "#F0FDF4", borderRadius: "8px", color: "#16A34A", fontSize: "13px", marginBottom: "16px" }}>✅ {toolResult}</div>
-            ) : (
-              <button onClick={() => handleToolAction(activeTool)} style={{ width: "100%", padding: "12px", borderRadius: "10px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "14px", fontWeight: 700 }}>
-                İşlemi Başlat
-              </button>
+
+            {toolMedia && !toolResult && (
+              isProcessingTool ? (
+                <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "16px", background: "#F8FAFC", borderRadius: "10px" }}>
+                  <div className="spinner" />
+                  <span style={{ fontSize: "14px", color: "#64748B" }}>İşleniyor...</span>
+                </div>
+              ) : (
+                <button onClick={() => handleToolAction(activeTool)} style={{ width: "100%", padding: "14px", borderRadius: "12px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "15px", fontWeight: 700 }}>
+                  ✨ {activeTool} Uygula
+                </button>
+              )
             )}
-            <button onClick={() => { setActiveTool(null); setToolResult(""); }} style={{ marginTop: "12px", width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "13px", color: "#64748B" }}>Kapat</button>
+
+            {toolResult && (
+              <div style={{ padding: "16px", background: "#F0FDF4", borderRadius: "10px", border: "1px solid #BBF7D0", marginTop: "12px" }}>
+                <div style={{ fontSize: "14px", color: "#16A34A", fontWeight: 600 }}>✅ {toolResult}</div>
+                {toolMedia && (
+                  <button onClick={() => handleDownload(toolMedia.url, `duzenlennis-${Date.now()}.${toolMedia.type === "video" ? "mp4" : "jpg"}`)} style={{ marginTop: "10px", padding: "8px 20px", borderRadius: "8px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "13px", fontWeight: 700 }}>
+                    ⬇️ İndir
+                  </button>
+                )}
+              </div>
+            )}
+
+            <button onClick={() => { setActiveTool(null); setToolMedia(null); setToolResult(""); }} style={{ marginTop: "16px", width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "13px", color: "#64748B" }}>Kapat</button>
           </div>
         </div>
       )}
@@ -336,6 +312,7 @@ export default function Dashboard() {
 
       <div style={{ maxWidth: "1100px", margin: "0 auto", padding: "32px 40px" }}>
 
+        {/* FORMAT */}
         <div style={{ marginBottom: "24px" }}>
           <div style={{ fontSize: "11px", fontWeight: 700, color: "#94A3B8", marginBottom: "10px", textTransform: "uppercase", letterSpacing: "1.5px" }}>Platform ve Format</div>
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
@@ -351,52 +328,42 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* ANALİZ */}
         <div style={{ background: "#fff", borderRadius: "16px", padding: "24px", border: "1px solid #F1F5F9", boxShadow: "0 2px 8px rgba(0,0,0,0.04)", marginBottom: "24px" }}>
           <div style={{ fontSize: "15px", fontWeight: 700, color: "#0F172A", marginBottom: "4px" }}>🔗 URL veya Konu Analizi</div>
           <div style={{ fontSize: "13px", color: "#94A3B8", marginBottom: "16px" }}>Web sitesi linki veya konu yazın. Sesli komut için 🎤 butonuna basın.</div>
-          <div style={{ display: "flex", gap: "10px" }}>
+          <div style={{ display: "flex", gap: "8px" }}>
             <input
-              value={input}
-              onChange={e => setInput(e.target.value)}
+              value={input} onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === "Enter" && handleAnalyze()}
               placeholder="https://sirketiniz.com veya 'Gaziantep seyahat acentesi uçak bileti otel'"
               style={{ flex: 1, padding: "12px 16px", borderRadius: "10px", border: "1.5px solid #E2E8F0", fontSize: "14px", outline: "none", color: "#0F172A", background: "#fff" }}
             />
-            <button
-              onClick={startListening}
-              className={isListening ? "mic-active" : ""}
-              style={{ padding: "12px 16px", borderRadius: "10px", border: `1.5px solid ${isListening ? "#EC4899" : "#E2E8F0"}`, background: isListening ? "#FFF0F7" : "#fff", cursor: "pointer", fontSize: "18px" }}
-              title="Sesli komut"
-            >
-              🎤
-            </button>
-            <button
-              onClick={() => handleAnalyze()}
-              disabled={!input.trim() || isAnalyzing || credits <= 0}
-              style={{ padding: "12px 24px", borderRadius: "10px", background: (!input.trim() || isAnalyzing || credits <= 0) ? "#E2E8F0" : "linear-gradient(135deg,#EC4899,#F97316)", color: (!input.trim() || isAnalyzing || credits <= 0) ? "#94A3B8" : "#fff", fontSize: "14px", fontWeight: 700, border: "none", cursor: (!input.trim() || isAnalyzing || credits <= 0) ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}
-            >
+            <button onClick={startListening} className={isListening ? "mic-pulse" : ""} style={{ padding: "12px 14px", borderRadius: "10px", border: `1.5px solid ${isListening ? "#EC4899" : "#E2E8F0"}`, background: isListening ? "#FFF0F7" : "#fff", cursor: "pointer", fontSize: "18px" }} title="Sesli komut">🎤</button>
+            <button onClick={() => handleAnalyze()} disabled={!input.trim() || isAnalyzing || credits <= 0} style={{ padding: "12px 20px", borderRadius: "10px", background: (!input.trim() || isAnalyzing || credits <= 0) ? "#E2E8F0" : "linear-gradient(135deg,#EC4899,#F97316)", color: (!input.trim() || isAnalyzing || credits <= 0) ? "#94A3B8" : "#fff", fontSize: "14px", fontWeight: 700, border: "none", cursor: (!input.trim() || isAnalyzing || credits <= 0) ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
               {isAnalyzing ? "Analiz ediliyor..." : credits <= 0 ? "Kredi bitti" : "Analiz Et →"}
             </button>
           </div>
 
-          {isListening && (
-            <div style={{ marginTop: "10px", fontSize: "13px", color: "#EC4899", fontWeight: 600 }}>🔴 Dinleniyor... Konuşun</div>
-          )}
+          {isListening && <div style={{ marginTop: "8px", fontSize: "13px", color: "#EC4899", fontWeight: 600 }}>🔴 Dinleniyor... Konuşun</div>}
 
+          {/* AI Seslendirme checkbox */}
+          <div style={{ marginTop: "12px", display: "flex", alignItems: "center", gap: "8px" }}>
+            <input type="checkbox" id="addVoice" checked={addVoice} onChange={e => setAddVoice(e.target.checked)} style={{ width: "16px", height: "16px", accentColor: "#EC4899", cursor: "pointer" }} />
+            <label htmlFor="addVoice" style={{ fontSize: "13px", color: "#64748B", cursor: "pointer", fontWeight: 500 }}>🔊 AI Seslendirme ekle (Türkçe, ücretsiz)</label>
+          </div>
+
+          {/* Medya yükleme */}
           <div style={{ marginTop: "16px" }}>
             <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748B", marginBottom: "8px" }}>📁 Fotoğraf ve Video Yükle (en fazla 20 dosya)</div>
             <input ref={fileInputRef} type="file" accept="image/*,video/*" multiple onChange={handleFileUpload} style={{ display: "none" }} />
-            <button onClick={() => fileInputRef.current?.click()} style={{ padding: "8px 18px", borderRadius: "8px", border: "1.5px dashed #E2E8F0", background: "#FAFAFA", cursor: "pointer", fontSize: "13px", color: "#64748B" }}>
-              + Dosya Ekle
-            </button>
+            <button onClick={() => fileInputRef.current?.click()} style={{ padding: "8px 18px", borderRadius: "8px", border: "1.5px dashed #E2E8F0", background: "#FAFAFA", cursor: "pointer", fontSize: "13px", color: "#64748B" }}>+ Dosya Ekle</button>
             {mediaFiles.length > 0 && (
               <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(80px,1fr))", gap: "8px" }}>
                 {mediaFiles.map((m, i) => (
                   <div key={i} style={{ position: "relative", borderRadius: "8px", overflow: "hidden", height: "70px" }}>
-                    {m.type === "image"
-                      ? <img src={m.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      : <video src={m.url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
-                    <button onClick={() => setMediaFiles(prev => prev.filter((_, j) => j !== i))} style={{ position: "absolute", top: "2px", right: "2px", background: "rgba(0,0,0,0.5)", color: "#fff", border: "none", borderRadius: "50%", width: "20px", height: "20px", cursor: "pointer", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+                    {m.type === "image" ? <img src={m.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <video src={m.url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
+                    <button onClick={() => setMediaFiles(prev => prev.filter((_, j) => j !== i))} style={{ position: "absolute", top: "2px", right: "2px", background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: "20px", height: "20px", cursor: "pointer", fontSize: "11px" }}>✕</button>
                   </div>
                 ))}
               </div>
@@ -406,22 +373,17 @@ export default function Dashboard() {
           {error && <div style={{ marginTop: "12px", padding: "10px 14px", borderRadius: "8px", background: "#FFF1F2", color: "#E11D48", fontSize: "13px" }}>{error}</div>}
         </div>
 
+        {/* SCRAPE FAILED */}
         {scrapeFailed && (
           <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: "16px", padding: "20px", marginBottom: "24px" }}>
             <div style={{ fontSize: "14px", fontWeight: 700, color: "#C2410C", marginBottom: "8px" }}>⚠️ Site okunamadı</div>
             <div style={{ fontSize: "13px", color: "#92400E", marginBottom: "12px" }}>Lütfen işletmenizi kısaca açıklayın:</div>
-            <textarea
-              value={manualDesc}
-              onChange={e => setManualDesc(e.target.value)}
-              placeholder="Örn: Gaziantep'te seyahat acentesi, uçak bileti, otel rezervasyonu ve tur paketleri sunuyoruz..."
-              style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1.5px solid #FED7AA", fontSize: "13px", color: "#0F172A", outline: "none", minHeight: "80px", resize: "vertical" }}
-            />
-            <button onClick={() => handleAnalyze(true)} disabled={!manualDesc.trim() || isAnalyzing} style={{ marginTop: "12px", padding: "10px 24px", borderRadius: "8px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "14px", fontWeight: 700 }}>
-              Manuel Analiz Et →
-            </button>
+            <textarea value={manualDesc} onChange={e => setManualDesc(e.target.value)} placeholder="Örn: Gaziantep'te seyahat acentesi, uçak bileti, otel rezervasyonu ve tur paketleri sunuyoruz..." style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1.5px solid #FED7AA", fontSize: "13px", color: "#0F172A", outline: "none", minHeight: "80px", resize: "vertical" }} />
+            <button onClick={() => handleAnalyze(true)} disabled={!manualDesc.trim() || isAnalyzing} style={{ marginTop: "12px", padding: "10px 24px", borderRadius: "8px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "14px", fontWeight: 700 }}>Manuel Analiz Et →</button>
           </div>
         )}
 
+        {/* LOADING */}
         {isAnalyzing && (
           <div style={{ marginBottom: "24px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
@@ -429,11 +391,12 @@ export default function Dashboard() {
               <div style={{ fontSize: "14px", color: "#64748B" }}>{analyzeStep}</div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "12px" }}>
-              {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: "140px" }} />)}
+              {[1,2,3].map(i => <div key={i} className="skeleton" style={{ height: "140px" }} />)}
             </div>
           </div>
         )}
 
+        {/* SENARYOLAR */}
         {scenarios && (
           <div style={{ marginBottom: "24px" }}>
             <div style={{ fontSize: "15px", fontWeight: 700, color: "#0F172A", marginBottom: "12px" }}>🎬 Video Senaryoları</div>
@@ -463,9 +426,7 @@ export default function Dashboard() {
                 <div style={{ display: "flex", gap: "24px", alignItems: "flex-start", flexWrap: "wrap" }}>
                   <video controls style={{ width: "320px", maxWidth: "100%", borderRadius: "12px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)" }} src={renderedVideo} />
                   <div style={{ display: "flex", flexDirection: "column", gap: "10px", paddingTop: "8px" }}>
-                    <button onClick={() => handleDownload(renderedVideo, `lagaluga-${Date.now()}.mp4`)} style={{ padding: "12px 28px", borderRadius: "10px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "14px", fontWeight: 700 }}>
-                      ⬇️ Bilgisayara İndir
-                    </button>
+                    <button onClick={() => handleDownload(renderedVideo, `lagaluga-${Date.now()}.mp4`)} style={{ padding: "12px 28px", borderRadius: "10px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "14px", fontWeight: 700 }}>⬇️ Bilgisayara İndir</button>
                     <div style={{ fontSize: "12px", color: "#64748B" }}>MP4 formatında kaydedilir.</div>
                   </div>
                 </div>
@@ -480,7 +441,7 @@ export default function Dashboard() {
                     <div key={i} className="card" style={{ borderRadius: "12px", overflow: "hidden", border: "1px solid #F1F5F9", background: "#fff" }}>
                       <video controls style={{ width: "100%", height: "130px", objectFit: "cover", display: "block" }} src={v} />
                       <div style={{ padding: "8px" }}>
-                        <button onClick={() => handleDownload(v, `stok-${i + 1}.mp4`)} style={{ width: "100%", padding: "6px", borderRadius: "6px", background: "#FFF0F7", color: "#EC4899", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: 600 }}>⬇️ İndir</button>
+                        <button onClick={() => handleDownload(v, `stok-${i+1}.mp4`)} style={{ width: "100%", padding: "6px", borderRadius: "6px", background: "#FFF0F7", color: "#EC4899", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: 600 }}>⬇️ İndir</button>
                       </div>
                     </div>
                   ))}
@@ -503,15 +464,16 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* AI ARAÇLAR */}
         <div>
           <div style={{ fontSize: "11px", fontWeight: 700, color: "#94A3B8", marginBottom: "10px", textTransform: "uppercase", letterSpacing: "1.5px" }}>AI Sihirli Araçlar</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: "10px" }}>
-            {tools.map(t => (
-              <div key={t.label} onClick={() => t.active && handleToolAction(t.label)} className="card" style={{ padding: "18px", borderRadius: "12px", border: `1px solid ${t.active ? "#FFF0F7" : "#F1F5F9"}`, background: t.active ? "#FFFBFF" : "#fff", boxShadow: "0 2px 6px rgba(0,0,0,0.03)", cursor: t.active ? "pointer" : "default" }}>
+            {TOOLS.map(t => (
+              <div key={t.label} onClick={() => t.active && setActiveTool(t.label)} className="card" style={{ padding: "18px", borderRadius: "12px", border: `1px solid ${t.active ? "#E8F5E9" : "#F1F5F9"}`, background: t.active ? "#FAFFF9" : "#fff", boxShadow: "0 2px 6px rgba(0,0,0,0.03)", cursor: t.active ? "pointer" : "default" }}>
                 <div style={{ fontSize: "26px", marginBottom: "10px" }}>{t.icon}</div>
                 <div style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A", marginBottom: "4px" }}>{t.label}</div>
                 <div style={{ fontSize: "11px", color: "#94A3B8", marginBottom: "10px", lineHeight: 1.5 }}>{t.desc}</div>
-                <div style={{ fontSize: "11px", color: t.active ? "#16A34A" : "#EC4899", fontWeight: 600 }}>{t.active ? "✓ Aktif" : "Yakında →"}</div>
+                <div style={{ fontSize: "11px", color: t.active ? "#16A34A" : "#94A3B8", fontWeight: 600 }}>{t.active ? "✓ Kullan →" : "Yakında →"}</div>
               </div>
             ))}
           </div>

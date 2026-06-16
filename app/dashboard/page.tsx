@@ -88,6 +88,12 @@ export default function Dashboard() {
   const [bgMusic, setBgMusic] = useState("none");
   const [musicVolume, setMusicVolume] = useState(50);
   const [pageScreenshots, setPageScreenshots] = useState<string[]>([]);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchType, setSearchType] = useState<"all"|"videos"|"images">("all");
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchVideos, setSearchVideos] = useState<string[]>([]);
+  const [searchImages, setSearchImages] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toolFileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<any>(null);
@@ -107,6 +113,7 @@ export default function Dashboard() {
   useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      if (renderPollRef.current) clearInterval(renderPollRef.current);
       if (recognitionRef.current) recognitionRef.current.stop();
     };
   }, []);
@@ -126,6 +133,9 @@ export default function Dashboard() {
     recognition.start();
   };
 
+  const [renderTaskId, setRenderTaskId] = useState<string | null>(null);
+  const renderPollRef = useRef<any>(null);
+
   const pollTask = useCallback(async (taskId: string) => {
     try {
       const res = await fetch(`${API}/projects/task/${taskId}`);
@@ -144,6 +154,25 @@ export default function Dashboard() {
         setIsAnalyzing(false); setAnalyzeStep("");
         setError("Analiz başarısız oldu.");
       }
+    } catch (e) { console.error(e); }
+  }, []);
+
+  const pollRender = useCallback(async (taskId: string) => {
+    try {
+      const res = await fetch(`${API}/projects/task/${taskId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const done = data.status === "completed" || data.status === "partial" || data.status === "failed";
+      if (!done) return;
+      clearInterval(renderPollRef.current); renderPollRef.current = null;
+      setIsRendering(false); setRenderTaskId(null);
+      if (data.status === "failed") { setError("Video üretilemedi. Lütfen tekrar deneyin."); return; }
+      const result = data.result || {};
+      setRenderMessage(result.message || "");
+      if (result.videos?.length) setVideos(result.videos);
+      if (result.images?.length) setImages(result.images);
+      if (result.rendered_video) setRenderedVideo(result.rendered_video);
+      if (data.status === "partial" && !result.rendered_video) setError("Video kısmen oluştu — stok görsel bulunamadı.");
     } catch (e) { console.error(e); }
   }, []);
 
@@ -169,6 +198,13 @@ export default function Dashboard() {
 
       if (data.task_id) {
         setAnalyzeStep("Senaryo hazırlanıyor...");
+        // Krediyi Supabase RPC ile güvenli şekilde düş, yoksa direkt update
+        if (user?.id) {
+          const { error: rpcErr } = await supabase.rpc("use_credit", { uid: user.id });
+          if (rpcErr) {
+            await supabase.from("profiles").update({ credits: Math.max(0, credits - 1) }).eq("id", user.id);
+          }
+        }
         setCredits(c => Math.max(0, c - 1));
         pollRef.current = setInterval(() => pollTask(data.task_id), 3000);
         setTimeout(() => {
@@ -186,21 +222,61 @@ export default function Dashboard() {
 
   const handleRender = async () => {
     if (!selectedId || isRendering) return;
-    setIsRendering(true); setVideos([]); setImages([]); setRenderedVideo(""); setRenderMessage(null);
+    setIsRendering(true); setVideos([]); setImages([]); setRenderedVideo(""); setRenderMessage(null); setError(null);
     const sel = scenarios?.find(s => s.id === selectedId);
+
     try {
+      // Blob URL'leri olan dosyaları önce Supabase'e yükle
+      const uploadedUrls: string[] = [];
+      for (const m of mediaFiles) {
+        if (m.file) {
+          try {
+            const form = new FormData();
+            form.append("file", m.file);
+            const up = await fetch(`${API}/tools/upload`, { method: "POST", body: form });
+            if (up.ok) {
+              const d = await up.json();
+              if (d.result_url) { uploadedUrls.push(d.result_url); continue; }
+            }
+          } catch {}
+        } else if (m.url && !m.url.startsWith("blob:")) {
+          uploadedUrls.push(m.url);
+        }
+      }
+
       const res = await fetch(`${API}/scenarios/${selectedId}/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: input, format, title: sel?.title || "", summary: sel?.summary || "", duration: sel?.duration || "0:45", add_voice: addVoice, user_media: mediaFiles.map(m => m.url), background_music: bgMusic === "none" ? "" : bgMusic, music_volume: musicVolume, screenshots: pageScreenshots })
+        body: JSON.stringify({ url: input, format, title: sel?.title || "", summary: sel?.summary || "", duration: sel?.duration || "0:45", add_voice: addVoice, user_media: uploadedUrls, background_music: bgMusic === "none" ? "" : bgMusic, music_volume: musicVolume, screenshots: pageScreenshots })
       });
       const data = await res.json();
-      setRenderMessage(data.message);
+
+      // Hemen gelen stok video listesini göster
       if (data.videos?.length) setVideos(data.videos);
       if (data.images?.length) setImages(data.images);
-      if (data.rendered_video) setRenderedVideo(data.rendered_video);
-    } catch { setError("Video üretilemedi."); }
-    finally { setIsRendering(false); }
+
+      if (data.task_id) {
+        // Async render — poll et
+        setRenderTaskId(data.task_id);
+        setRenderMessage("Video işleniyor, lütfen bekleyin...");
+        renderPollRef.current = setInterval(() => pollRender(data.task_id), 4000);
+        setTimeout(() => {
+          if (renderPollRef.current) {
+            clearInterval(renderPollRef.current); renderPollRef.current = null;
+            setIsRendering(false); setRenderTaskId(null);
+            setError("Video işleme zaman aşımına uğradı. Lütfen tekrar deneyin.");
+          }
+        }, 180000);
+      } else {
+        // Eski sync yanıt (fallback)
+        setRenderMessage(data.message || "");
+        if (data.rendered_video) setRenderedVideo(data.rendered_video);
+        setIsRendering(false);
+      }
+    } catch (e: any) {
+      setError(`Video üretilemedi: ${e.message}`);
+      setIsRendering(false);
+    }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -273,6 +349,19 @@ export default function Dashboard() {
     } catch { alert("İndirme başarısız."); }
   };
 
+  const handleSearch = async () => {
+    if (!searchQuery.trim() || isSearching) return;
+    setIsSearching(true); setSearchVideos([]); setSearchImages([]);
+    try {
+      const res = await fetch(`${API}/scenarios/search?keyword=${encodeURIComponent(searchQuery)}&type=${searchType}&per_page=12`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setSearchVideos(data.videos || []);
+      setSearchImages(data.images || []);
+    } catch { /* sessiz hata */ }
+    finally { setIsSearching(false); }
+  };
+
   const handleLogout = async () => { await supabase.auth.signOut(); router.push("/auth"); };
 
   if (!user) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", fontFamily: "Inter,sans-serif", color: "#EC4899" }}>Yükleniyor...</div>;
@@ -293,6 +382,7 @@ export default function Dashboard() {
         .spinner { width: 20px; height: 20px; border: 2px solid rgba(236,72,153,0.3); border-top-color: #EC4899; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
         @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }
         .mic-pulse { animation: pulse 1s infinite; }
+        @keyframes progress-bar { 0%{width:5%;margin-left:0} 50%{width:60%;margin-left:20%} 100%{width:5%;margin-left:90%} }
       `}</style>
 
       {/* LIGHTBOX */}
@@ -581,11 +671,25 @@ export default function Dashboard() {
               ))}
             </div>
 
-            <div style={{ marginTop: "16px", display: "flex", justifyContent: "flex-end", gap: "12px", alignItems: "center" }}>
-              {renderMessage && <div style={{ fontSize: "13px", color: "#16A34A", background: "#F0FDF4", padding: "8px 14px", borderRadius: "8px", border: "1px solid #BBF7D0" }}>{renderMessage}</div>}
-              <button onClick={handleRender} disabled={!selectedId || isRendering} style={{ padding: "12px 32px", borderRadius: "10px", background: (selectedId && !isRendering) ? "linear-gradient(135deg,#EC4899,#F97316)" : "#E2E8F0", color: (selectedId && !isRendering) ? "#fff" : "#94A3B8", fontSize: "14px", fontWeight: 700, border: "none", cursor: (selectedId && !isRendering) ? "pointer" : "not-allowed" }}>
-                {isRendering ? "⏳ Video hazırlanıyor..." : "🎬 Video Üret"}
-              </button>
+            <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "10px" }}>
+              {isRendering && (
+                <div style={{ background: "#FFF8F0", border: "1px solid #FED7AA", borderRadius: "10px", padding: "14px 18px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+                    <div className="spinner" />
+                    <span style={{ fontSize: "14px", fontWeight: 600, color: "#C2410C" }}>Video işleniyor...</span>
+                  </div>
+                  <div style={{ background: "#FEE2B0", borderRadius: "4px", height: "4px", overflow: "hidden" }}>
+                    <div style={{ height: "100%", background: "linear-gradient(90deg,#F97316,#EC4899)", borderRadius: "4px", animation: "progress-bar 3s ease-in-out infinite" }} />
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#92400E", marginTop: "6px" }}>Stok videolar indiriliyor, kliplere dönüştürülüyor. Bu işlem 1-3 dakika sürebilir.</div>
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", alignItems: "center" }}>
+                {renderMessage && !isRendering && <div style={{ fontSize: "13px", color: "#16A34A", background: "#F0FDF4", padding: "8px 14px", borderRadius: "8px", border: "1px solid #BBF7D0" }}>{renderMessage}</div>}
+                <button onClick={handleRender} disabled={!selectedId || isRendering} style={{ padding: "12px 32px", borderRadius: "10px", background: (selectedId && !isRendering) ? "linear-gradient(135deg,#EC4899,#F97316)" : "#E2E8F0", color: (selectedId && !isRendering) ? "#fff" : "#94A3B8", fontSize: "14px", fontWeight: 700, border: "none", cursor: (selectedId && !isRendering) ? "pointer" : "not-allowed" }}>
+                  {isRendering ? "⏳ İşleniyor..." : "🎬 Video Üret"}
+                </button>
+              </div>
             </div>
 
             {renderedVideo && (
@@ -593,9 +697,18 @@ export default function Dashboard() {
                 <div style={{ fontSize: "15px", fontWeight: 700, color: "#0F172A", marginBottom: "16px" }}>✅ Hazırlanan Video</div>
                 <div style={{ display: "flex", gap: "24px", alignItems: "flex-start", flexWrap: "wrap" }}>
                   <video controls style={{ width: "320px", maxWidth: "100%", borderRadius: "12px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)" }} src={renderedVideo} />
-                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", paddingTop: "8px" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", paddingTop: "8px", flex: 1, minWidth: "220px" }}>
                     <button onClick={() => handleDownload(renderedVideo, `lagaluga-${Date.now()}.mp4`)} style={{ padding: "12px 28px", borderRadius: "10px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "14px", fontWeight: 700 }}>⬇️ Bilgisayara İndir</button>
-                    <div style={{ fontSize: "12px", color: "#64748B" }}>MP4 formatında kaydedilir.</div>
+
+                    <div style={{ fontSize: "12px", fontWeight: 700, color: "#64748B", marginTop: "8px", textTransform: "uppercase", letterSpacing: "1px" }}>Paylaş</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                      <button onClick={() => { navigator.clipboard.writeText(renderedVideo); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); }} style={{ padding: "9px 16px", borderRadius: "8px", border: "1.5px solid #E2E8F0", background: linkCopied ? "#F0FDF4" : "#fff", cursor: "pointer", fontSize: "13px", fontWeight: 600, color: linkCopied ? "#16A34A" : "#64748B" }}>{linkCopied ? "✅ Kopyalandı" : "🔗 Linki Kopyala"}</button>
+                      <button onClick={() => window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent("Lagaluga ile oluşturduğum tanıtım videosu: " + renderedVideo)}`, "_blank")} style={{ padding: "9px 16px", borderRadius: "8px", border: "1.5px solid #25D366", background: "#fff", cursor: "pointer", fontSize: "13px", fontWeight: 600, color: "#25D366" }}>💬 WhatsApp</button>
+                      <button onClick={() => window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(renderedVideo)}&text=${encodeURIComponent("Lagaluga AI ile oluşturduğum tanıtım videosu 🎬")}`, "_blank")} style={{ padding: "9px 16px", borderRadius: "8px", border: "1.5px solid #1DA1F2", background: "#fff", cursor: "pointer", fontSize: "13px", fontWeight: 600, color: "#1DA1F2" }}>𝕏 Twitter</button>
+                      <button onClick={() => window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(renderedVideo)}`, "_blank")} style={{ padding: "9px 16px", borderRadius: "8px", border: "1.5px solid #0A66C2", background: "#fff", cursor: "pointer", fontSize: "13px", fontWeight: 600, color: "#0A66C2" }}>in LinkedIn</button>
+                      <button onClick={() => window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(renderedVideo)}`, "_blank")} style={{ padding: "9px 16px", borderRadius: "8px", border: "1.5px solid #1877F2", background: "#fff", cursor: "pointer", fontSize: "13px", fontWeight: 600, color: "#1877F2" }}>f Facebook</button>
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: 1.5 }}>Instagram ve TikTok için videoyu indirip uygulamadan yükleyin.</div>
                   </div>
                 </div>
               </div>
@@ -631,6 +744,63 @@ export default function Dashboard() {
             )}
           </div>
         )}
+
+        {/* GÖRSEL ARAMA MOTORU */}
+        <div style={{ marginBottom: "32px" }}>
+          <div style={{ fontSize: "11px", fontWeight: 700, color: "#94A3B8", marginBottom: "10px", textTransform: "uppercase", letterSpacing: "1.5px" }}>🔍 Telifsiz İçerik Ara</div>
+          <div style={{ background: "#fff", borderRadius: "16px", padding: "20px", border: "1px solid #F1F5F9", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+            <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+              <input
+                value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSearch()}
+                placeholder="Kelime yazın: 'kahve', 'İstanbul', 'teknoloji'..."
+                style={{ flex: 1, padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #E2E8F0", fontSize: "14px", outline: "none", color: "#0F172A" }}
+              />
+              <div style={{ display: "flex", gap: "6px" }}>
+                {(["all","videos","images"] as const).map(t => (
+                  <button key={t} onClick={() => setSearchType(t)} style={{ padding: "10px 14px", borderRadius: "8px", border: `1.5px solid ${searchType===t?"#EC4899":"#E2E8F0"}`, background: searchType===t?"#FFF0F7":"#fff", cursor: "pointer", fontSize: "12px", fontWeight: 600, color: searchType===t?"#EC4899":"#64748B" }}>
+                    {t==="all"?"Tümü":t==="videos"?"🎥 Video":"🖼️ Görsel"}
+                  </button>
+                ))}
+              </div>
+              <button onClick={handleSearch} disabled={!searchQuery.trim()||isSearching} style={{ padding: "10px 20px", borderRadius: "10px", background: (searchQuery.trim()&&!isSearching)?"linear-gradient(135deg,#EC4899,#F97316)":"#E2E8F0", color: (searchQuery.trim()&&!isSearching)?"#fff":"#94A3B8", border: "none", cursor: "pointer", fontSize: "13px", fontWeight: 700, whiteSpace: "nowrap" }}>
+                {isSearching ? <span className="spinner" /> : "Ara →"}
+              </button>
+            </div>
+
+            {(searchVideos.length > 0 || searchImages.length > 0) && (
+              <div>
+                {searchVideos.length > 0 && (
+                  <div style={{ marginBottom: "16px" }}>
+                    <div style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A", marginBottom: "10px" }}>🎥 Videolar ({searchVideos.length})</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: "10px" }}>
+                      {searchVideos.map((v, i) => (
+                        <div key={i} className="card" style={{ borderRadius: "10px", overflow: "hidden", border: "1px solid #F1F5F9", background: "#fff" }}>
+                          <video controls style={{ width: "100%", height: "110px", objectFit: "cover", display: "block" }} src={v} />
+                          <div style={{ padding: "6px" }}>
+                            <button onClick={() => handleDownload(v, `video-${i+1}.mp4`)} style={{ width: "100%", padding: "5px", borderRadius: "6px", background: "#FFF0F7", color: "#EC4899", border: "none", cursor: "pointer", fontSize: "11px", fontWeight: 600 }}>⬇️ İndir</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {searchImages.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A", marginBottom: "10px" }}>🖼️ Görseller ({searchImages.length})</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))", gap: "8px" }}>
+                      {searchImages.map((img, i) => (
+                        <div key={i} className="media-item" onClick={() => setLightbox(img)} style={{ borderRadius: "8px", overflow: "hidden", height: "90px" }}>
+                          <img src={img} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* AI ARAÇLAR */}
         <div>

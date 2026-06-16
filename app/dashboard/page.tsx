@@ -374,11 +374,18 @@ export default function Dashboard() {
     setIsSearching(true); setSearchVideos([]); setSearchImages([]);
     try {
       const res = await fetch(`${API}/scenarios/search?keyword=${encodeURIComponent(searchQuery)}&type=${searchType}&per_page=12`);
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setSearchVideos(data.videos || []);
       setSearchImages(data.images || []);
-    } catch { /* sessiz hata */ }
+      if (!data.videos?.length && !data.images?.length) {
+        setError("Arama sonucu bulunamadı. Farklı bir kelime veya İngilizce deneyin.");
+        setTimeout(() => setError(null), 4000);
+      }
+    } catch (e: any) {
+      setError(`Arama başarısız: ${e.message}`);
+      setTimeout(() => setError(null), 4000);
+    }
     finally { setIsSearching(false); }
   };
 
@@ -789,6 +796,11 @@ export default function Dashboard() {
               </button>
             </div>
 
+            {!isSearching && searchQuery && searchVideos.length === 0 && searchImages.length === 0 && (
+              <div style={{ padding: "20px", textAlign: "center", color: "#94A3B8", fontSize: "13px" }}>
+                Kaynak: Pexels · Pixabay · Unsplash · Google Görseller — sonuç bulunamadı, İngilizce deneyin.
+              </div>
+            )}
             {(searchVideos.length > 0 || searchImages.length > 0) && (
               <div>
                 {searchVideos.length > 0 && (

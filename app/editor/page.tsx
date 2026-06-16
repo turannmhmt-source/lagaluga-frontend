@@ -18,7 +18,7 @@ type TextEl = { id: string; text: string; x: number; y: number; fontSize: number
 type StickerEl = { id: string; emoji: string; x: number; y: number; size: number; startSec: number; endSec: number; };
 type FilterEl = { name: string; css: string; };
 type TransitionType = "none" | "fade" | "slide" | "zoom" | "wipe";
-type ActiveTool = "clips" | "text" | "sticker" | "music" | "voice" | "subtitle" | "filter" | "transition" | "ai" | "export" | "background";
+type ActiveTool = "clips" | "text" | "sticker" | "music" | "voice" | "subtitle" | "filter" | "transition" | "ai" | "export" | "background" | "stock";
 
 const FILTERS: FilterEl[] = [
   { name: "Orijinal", css: "none" },
@@ -67,6 +67,7 @@ const FORMATS = [
 // ─── Left Sidebar Tools ───────────────────────────────────────────────────────
 const TOOLS: { id: ActiveTool; icon: string; label: string }[] = [
   { id: "clips", icon: "🎬", label: "Klip" },
+  { id: "stock", icon: "🗃️", label: "Stok Medya" },
   { id: "text", icon: "T", label: "Metin" },
   { id: "sticker", icon: "😀", label: "Stiker" },
   { id: "filter", icon: "🎨", label: "Filtre" },
@@ -74,7 +75,7 @@ const TOOLS: { id: ActiveTool; icon: string; label: string }[] = [
   { id: "music", icon: "🎵", label: "Müzik" },
   { id: "voice", icon: "🎤", label: "Seslendirme" },
   { id: "subtitle", icon: "💬", label: "Altyazı" },
-  { id: "background", icon: "🖼️", label: "Arka Plan" },
+  { id: "background", icon: "🖼️", label: "Arka Plan Sil" },
   { id: "ai", icon: "🤖", label: "AI Araçlar" },
   { id: "export", icon: "📤", label: "Paylaş" },
 ];
@@ -103,6 +104,12 @@ export default function Editor() {
   const [playheadSec, setPlayheadSec] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [uploading, setUploading] = useState(false);
+
+  // Stock media state
+  const [stockQuery, setStockQuery] = useState("");
+  const [stockType, setStockType] = useState<"video" | "image">("video");
+  const [stockResults, setStockResults] = useState<any[]>([]);
+  const [stockLoading, setStockLoading] = useState(false);
 
   // Tool-specific state
   const [voiceText, setVoiceText] = useState("");
@@ -207,6 +214,29 @@ export default function Editor() {
     setToolLoading(false);
   };
 
+  // ── Stock search ──
+  const searchStock = async () => {
+    if (!stockQuery.trim()) return;
+    setStockLoading(true); setStockResults([]);
+    try {
+      const res = await fetch(`${API}/editor/stock-search`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: stockQuery, type: stockType, per_page: 12 }) });
+      const d = await res.json();
+      setStockResults(d.results || []);
+    } catch { setStockResults([]); }
+    setStockLoading(false);
+  };
+
+  const addStockClip = async (item: any) => {
+    setUploading(true);
+    try {
+      const probe = await fetch(`${API}/editor/probe`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: item.url }) });
+      const pd = await probe.json();
+      const dur = pd.duration_sec || (item.type === "image" ? 5 : 10);
+      setClips(prev => [...prev, { id: crypto.randomUUID(), url: item.url, name: item.source + " - " + stockQuery, dur, trimStart: 0, trimEnd: Math.min(dur, 15) }]);
+    } catch {}
+    setUploading(false);
+  };
+
   // ── Export ──
   const startExport = async () => {
     if (clips.length === 0) { alert("Önce klip ekleyin."); return; }
@@ -215,8 +245,10 @@ export default function Editor() {
       const timeline = {
         id: crypto.randomUUID(),
         format,
+        filterName: filter.name,
         clips: clips.map((c, i) => ({ id: c.id, sourceUrl: c.url, sourceDurationSec: c.dur, trimStartSec: c.trimStart, trimEndSec: c.trimEnd, orderIndex: i, transitionIn: { type: transition, durationMs: 500 } })),
         textLayers: texts.map(t => ({ id: t.id, text: t.text, fontFamily: t.fontFamily, fontSize: t.fontSize, color: t.color, bgColor: "transparent", x: t.x / 100, y: t.y / 100, startSec: t.startSec, endSec: t.endSec, bold: t.bold, italic: t.italic })),
+        stickers: stickers.map(s => ({ id: s.id, emoji: s.emoji, x: s.x / 100, y: s.y / 100, size: s.size, startSec: s.startSec, endSec: s.endSec })),
         backgroundMusicId: music,
         musicVolumePercent: musicVol,
       };
@@ -359,6 +391,43 @@ export default function Editor() {
   // ── Left Panel Content ────────────────────────────────────────────────────
   function renderLeftPanel() {
     switch (activeTool) {
+      case "stock": return (
+        <div>
+          <div style={{ display: "flex", gap: "6px", marginBottom: "8px" }}>
+            {(["video", "image"] as const).map(t => (
+              <button key={t} onClick={() => setStockType(t)}
+                style={{ flex: 1, padding: "6px", borderRadius: "8px", border: `1.5px solid ${stockType === t ? pink : "#FCE7F3"}`, background: stockType === t ? "#FFF0F7" : "#F8FAFC", color: stockType === t ? pink : "#64748B", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}>
+                {t === "video" ? "🎬 Video" : "🖼️ Görsel"}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: "6px", marginBottom: "10px" }}>
+            <input value={stockQuery} onChange={e => setStockQuery(e.target.value)} onKeyDown={e => e.key === "Enter" && searchStock()} placeholder="Ara... (İngilizce)" style={{ flex: 1, padding: "7px 10px", borderRadius: "8px", border: "1.5px solid #FCE7F3", fontSize: "12px", outline: "none", color: "#0F172A" }} />
+            <button onClick={searchStock} disabled={stockLoading} style={{ padding: "7px 10px", borderRadius: "8px", border: "none", background: pinkGrad, color: "#fff", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}>🔍</button>
+          </div>
+          {stockLoading && <div style={{ textAlign: "center", color: "#94A3B8", fontSize: "12px", padding: "16px" }}>⏳ Aranıyor...</div>}
+          {stockResults.length === 0 && !stockLoading && (
+            <div style={{ fontSize: "11px", color: "#94A3B8", textAlign: "center", paddingTop: "10px" }}>
+              Pexels · Pixabay · Unsplash<br />milyonlarca ücretsiz medya
+            </div>
+          )}
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            {stockResults.map((item, i) => (
+              <div key={i} style={{ borderRadius: "8px", overflow: "hidden", border: "1px solid #FCE7F3", background: "#F8FAFC" }}>
+                {item.thumb && <img src={item.thumb} alt="" style={{ width: "100%", height: "80px", objectFit: "cover", display: "block" }} />}
+                <div style={{ padding: "6px 8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: "10px", color: "#94A3B8", fontWeight: 600 }}>{item.source}{item.duration ? ` · ${item.duration}s` : ""}</span>
+                  <button onClick={() => addStockClip(item)} disabled={uploading}
+                    style={{ padding: "4px 8px", borderRadius: "6px", border: "none", background: pinkGrad, color: "#fff", fontSize: "10px", fontWeight: 700, cursor: "pointer" }}>
+                    + Ekle
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+
       case "clips": return (
         <div>
           {toolBtn(() => fileInputRef.current?.click(), uploading ? "⏳ Yükleniyor..." : "📁 Klip / Fotoğraf Ekle", true, uploading)}

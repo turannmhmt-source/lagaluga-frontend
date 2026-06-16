@@ -1,16 +1,10 @@
-// v2 - Professional Editor
+// v3 - Professional Editor
 "use client";
 export const dynamic = "force-dynamic";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  "https://ffbtiktwzrlzlndfnyzy.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmYnRpa3R3enJsemxuZGZueXp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzNDUwMzgsImV4cCI6MjA5NjkyMTAzOH0.88tvA2bJF3pv3TaUwOMTkn4PFGHjZcI8otUGJhZm8pk"
-);
-
-const API = "https://lagaluga-backend-production.up.railway.app";
+import { getSupabase } from "@/lib/supabase";
+import { callApi, uploadFile } from "@/lib/api";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Clip = { id: string; url: string; name: string; dur: number; trimStart: number; trimEnd: number; };
@@ -147,7 +141,7 @@ export default function Editor() {
 
   // Auth
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    getSupabase().auth.getSession().then(({ data }) => {
       if (!data.session) { router.push("/auth"); return; }
       setUser(data.session.user);
     });
@@ -160,15 +154,10 @@ export default function Editor() {
   const uploadClip = async (file: File) => {
     setUploading(true);
     try {
-      const form = new FormData();
-      form.append("file", file);
-      const res = await fetch(`${API}/tools/upload`, { method: "POST", body: form });
-      const d = await res.json();
-      if (!d.result_url) throw new Error("URL yok");
-      const probe = await fetch(`${API}/editor/probe`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: d.result_url }) });
-      const pd = await probe.json();
+      const resultUrl = await uploadFile(file);
+      const pd = await callApi('/editor/probe', { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: resultUrl }) });
       const dur = pd.duration_sec || 10;
-      setClips(prev => [...prev, { id: crypto.randomUUID(), url: d.result_url, name: file.name, dur, trimStart: 0, trimEnd: dur }]);
+      setClips(prev => [...prev, { id: crypto.randomUUID(), url: resultUrl, name: file.name, dur, trimStart: 0, trimEnd: dur }]);
     } catch (e) { alert("Yükleme hatası: " + e); }
     setUploading(false);
   };
@@ -188,11 +177,11 @@ export default function Editor() {
       const form = new FormData();
       form.append("text", voiceText);
       form.append("voice", voiceVoice);
-      const res = await fetch(`${API}/tools/voiceover`, { method: "POST", body: form });
-      const d = await res.json();
+      const d = await callApi('/tools/voiceover', { method: "POST", body: form });
+      console.log('[TOOL] voiceover', d);
       if (d.status === "completed") setToolResult(d.result_url);
-      else setToolError(d.message);
-    } catch { setToolError("Hata oluştu."); }
+      else setToolError(d.message || "İşlem başarısız.");
+    } catch (e: any) { setToolError(e.message || "Hata oluştu."); }
     setToolLoading(false);
   };
 
@@ -203,11 +192,11 @@ export default function Editor() {
       const form = new FormData();
       form.append("file", file);
       form.append("language", subtitleLang);
-      const res = await fetch(`${API}/tools/subtitle`, { method: "POST", body: form });
-      const d = await res.json();
+      const d = await callApi('/tools/subtitle', { method: "POST", body: form });
+      console.log('[TOOL] subtitle', d);
       if (d.status === "completed") setToolResult(d.result_url);
-      else setToolError(d.message);
-    } catch { setToolError("Hata oluştu."); }
+      else setToolError(d.message || "İşlem başarısız.");
+    } catch (e: any) { setToolError(e.message || "Hata oluştu."); }
     setToolLoading(false);
   };
 
@@ -218,11 +207,15 @@ export default function Editor() {
       const form = new FormData();
       form.append("file", file);
       form.append("description", "arka planı kaldır");
-      const res = await fetch(`${API}/tools/bg-remove`, { method: "POST", body: form });
-      const d = await res.json();
+      const d = await callApi('/tools/bg-remove', { method: "POST", body: form });
+      console.log('[TOOL] bg-remove', d);
       if (d.status === "completed") setToolResult(d.result_url);
-      else setToolError(d.message);
-    } catch { setToolError("Hata oluştu."); }
+      else setToolError(d.message || "İşlem başarısız.");
+    } catch (e: any) {
+      // REMOVEBG_API_KEY yoksa hata verme, sessizce geç
+      console.warn('[bg-remove] hata:', e.message);
+      setToolError("Arka plan silme şu an kullanılamıyor. Yakında aktif olacak.");
+    }
     setToolLoading(false);
   };
 
@@ -231,8 +224,7 @@ export default function Editor() {
     if (!stockQuery.trim()) return;
     setStockLoading(true); setStockResults([]);
     try {
-      const res = await fetch(`${API}/editor/stock-search`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: stockQuery, type: stockType, per_page: 12 }) });
-      const d = await res.json();
+      const d = await callApi('/editor/stock-search', { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: stockQuery, type: stockType, per_page: 12 }) });
       setStockResults(d.results || []);
     } catch { setStockResults([]); }
     setStockLoading(false);
@@ -241,8 +233,7 @@ export default function Editor() {
   const addStockClip = async (item: any) => {
     setUploading(true);
     try {
-      const probe = await fetch(`${API}/editor/probe`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: item.url }) });
-      const pd = await probe.json();
+      const pd = await callApi('/editor/probe', { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: item.url }) });
       const dur = pd.duration_sec || (item.type === "image" ? 5 : 10);
       setClips(prev => [...prev, { id: crypto.randomUUID(), url: item.url, name: item.source + " - " + stockQuery, dur, trimStart: 0, trimEnd: Math.min(dur, 15) }]);
     } catch {}
@@ -264,14 +255,12 @@ export default function Editor() {
         backgroundMusicId: music,
         musicVolumePercent: musicVol,
       };
-      const res = await fetch(`${API}/editor/render`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ timeline, user_id: user?.id || "" }) });
-      const d = await res.json();
+      const d = await callApi('/editor/render', { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ timeline, user_id: user?.id || "" }) });
       if (!d.task_id) { setExporting(false); alert(d.message || "Render başlatılamadı."); return; }
       setExportTaskId(d.task_id);
       exportPollRef.current = setInterval(async () => {
         try {
-          const r = await fetch(`${API}/projects/task/${d.task_id}`);
-          const rd = await r.json();
+          const rd = await callApi(`/projects/task/${d.task_id}`);
           if (rd.status === "completed" || rd.status === "partial") {
             clearInterval(exportPollRef.current!);
             setExporting(false);

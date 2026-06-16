@@ -1,16 +1,10 @@
-// v3
+// v4
 "use client";
 export const dynamic = "force-dynamic";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  "https://ffbtiktwzrlzlndfnyzy.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmYnRpa3R3enJsemxuZGZueXp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzNDUwMzgsImV4cCI6MjA5NjkyMTAzOH0.88tvA2bJF3pv3TaUwOMTkn4PFGHjZcI8otUGJhZm8pk"
-);
-
-const API = "https://lagaluga-backend-production.up.railway.app";
+import { getSupabase } from "@/lib/supabase";
+import { callApi, uploadFile } from "@/lib/api";
 
 type Scenario = { id: string; title: string; summary: string; style: string; duration: string; };
 type MediaFile = { url: string; type: "image" | "video"; name: string; file?: File; };
@@ -104,6 +98,7 @@ export default function Dashboard() {
   const router = useRouter();
 
   useEffect(() => {
+    const supabase = getSupabase();
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) { router.push("/auth"); return; }
       setUser(session.user);
@@ -116,8 +111,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!user || trendingLoaded) return;
     setTrendingLoaded(true);
-    fetch(`${API}/scenarios/trending`)
-      .then(r => r.ok ? r.json() : null)
+    callApi('/scenarios/trending')
       .then(d => { if (d) { setTrendingVideos(d.videos || []); setTrendingImages(d.images || []); } })
       .catch(() => {});
   }, [user, trendingLoaded]);
@@ -150,9 +144,7 @@ export default function Dashboard() {
 
   const pollTask = useCallback(async (taskId: string) => {
     try {
-      const res = await fetch(`${API}/projects/task/${taskId}`);
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await callApi(`/projects/task/${taskId}`);
       if (data.status === "completed") {
         clearInterval(pollRef.current); pollRef.current = null;
         setIsAnalyzing(false); setAnalyzeStep("");
@@ -171,9 +163,7 @@ export default function Dashboard() {
 
   const pollRender = useCallback(async (taskId: string) => {
     try {
-      const res = await fetch(`${API}/projects/task/${taskId}`);
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await callApi(`/projects/task/${taskId}`);
       const done = data.status === "completed" || data.status === "partial" || data.status === "failed";
       if (!done) return;
       clearInterval(renderPollRef.current); renderPollRef.current = null;
@@ -220,17 +210,16 @@ export default function Dashboard() {
 
     const urlToSend = isUrl ? cleanUrl : `topic:${cleanUrl}`;
     try {
-      const res = await fetch(`${API}/projects/analyze`, {
+      const data = await callApi('/projects/analyze', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: urlToSend, format, user_id: user?.id || "", manual_description: useManual ? manualDesc : "" })
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
 
       if (data.task_id) {
         setAnalyzeStep("Senaryo hazırlanıyor...");
         // Krediyi Supabase RPC ile güvenli şekilde düş, yoksa direkt update
+        const supabase = getSupabase();
         if (user?.id) {
           const { error: rpcErr } = await supabase.rpc("use_credit", { uid: user.id });
           if (rpcErr) {
@@ -258,30 +247,21 @@ export default function Dashboard() {
     const sel = scenarios?.find(s => s.id === selectedId);
 
     try {
-      // Blob URL'leri olan dosyaları önce Supabase'e yükle
+      // Blob URL'leri olan dosyaları önce backend'e yükle
       const uploadedUrls: string[] = [];
       for (const m of mediaFiles) {
         if (m.file) {
-          try {
-            const form = new FormData();
-            form.append("file", m.file);
-            const up = await fetch(`${API}/tools/upload`, { method: "POST", body: form });
-            if (up.ok) {
-              const d = await up.json();
-              if (d.result_url) { uploadedUrls.push(d.result_url); continue; }
-            }
-          } catch {}
+          try { uploadedUrls.push(await uploadFile(m.file)); } catch {}
         } else if (m.url && !m.url.startsWith("blob:")) {
           uploadedUrls.push(m.url);
         }
       }
 
-      const res = await fetch(`${API}/scenarios/${selectedId}/render`, {
+      const data = await callApi(`/scenarios/${selectedId}/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: input, format, title: sel?.title || "", summary: sel?.summary || "", duration: sel?.duration || "0:45", add_voice: addVoice, user_media: uploadedUrls, background_music: bgMusic === "none" ? "" : bgMusic, music_volume: musicVolume, screenshots: pageScreenshots })
       });
-      const data = await res.json();
 
       // Hemen gelen stok video listesini göster
       if (data.videos?.length) setVideos(data.videos);
@@ -362,9 +342,8 @@ export default function Dashboard() {
     }
 
     try {
-      const res = await fetch(`${API}/tools/${tool.key}`, { method: "POST", body: form });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const data = await callApi(`/tools/${tool.key}`, { method: "POST", body: form });
+      console.log('[TOOL]', tool.key, data);
       if (data.status === "completed") {
         setToolResult(data.message || "İşlem tamamlandı.");
         if (data.result_url) setToolResultUrl(data.result_url);
@@ -389,9 +368,7 @@ export default function Dashboard() {
     if (!searchQuery.trim() || isSearching) return;
     setIsSearching(true); setSearchVideos([]); setSearchImages([]);
     try {
-      const res = await fetch(`${API}/scenarios/search?keyword=${encodeURIComponent(searchQuery)}&type=${searchType}&per_page=12`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const data = await callApi(`/scenarios/search?keyword=${encodeURIComponent(searchQuery)}&type=${searchType}&per_page=12`);
       setSearchVideos(data.videos || []);
       setSearchImages(data.images || []);
       if (!data.videos?.length && !data.images?.length) {
@@ -405,7 +382,7 @@ export default function Dashboard() {
     finally { setIsSearching(false); }
   };
 
-  const handleLogout = async () => { await supabase.auth.signOut(); router.push("/auth"); };
+  const handleLogout = async () => { await getSupabase().auth.signOut(); router.push("/auth"); };
 
   if (!user) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", fontFamily: "Inter,sans-serif", color: "#EC4899" }}>Yükleniyor...</div>;
 

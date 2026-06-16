@@ -359,7 +359,7 @@ export default function Editor() {
       </div>
 
       {/* Hidden file inputs */}
-      <input ref={fileInputRef} type="file" accept="video/*,image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files?.[0]; if (f) uploadClip(f); e.target.value = ""; }} />
+      <input ref={fileInputRef} type="file" accept="video/*,image/*" multiple style={{ display: "none" }} onChange={async e => { const files = Array.from(e.target.files || []); for (const f of files) await uploadClip(f); e.target.value = ""; }} />
       <input ref={bgFileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files?.[0]; if (f) runBgRemove(f); e.target.value = ""; }} />
       <input ref={subtitleFileRef} type="file" accept="video/*,audio/*" style={{ display: "none" }} onChange={e => { const f = e.target.files?.[0]; if (f) runSubtitle(f); e.target.value = ""; }} />
 

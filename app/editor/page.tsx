@@ -257,18 +257,21 @@ export default function Editor() {
       if (!d.task_id) { setExporting(false); alert(d.message || "Render başlatılamadı."); return; }
       setExportTaskId(d.task_id);
       exportPollRef.current = setInterval(async () => {
-        const r = await fetch(`${API}/projects/task/${d.task_id}`);
-        const rd = await r.json();
-        if (rd.status === "completed") {
-          clearInterval(exportPollRef.current!);
-          setExporting(false);
-          setExportUrl(rd.result?.rendered_video || "");
-          setActiveTool("export");
-        } else if (rd.status === "failed") {
-          clearInterval(exportPollRef.current!);
-          setExporting(false);
-          alert("Render başarısız: " + rd.error);
-        }
+        try {
+          const r = await fetch(`${API}/projects/task/${d.task_id}`);
+          const rd = await r.json();
+          if (rd.status === "completed" || rd.status === "partial") {
+            clearInterval(exportPollRef.current!);
+            setExporting(false);
+            const videoUrl = rd.result?.rendered_video || "";
+            if (videoUrl) { setExportUrl(videoUrl); setActiveTool("export"); }
+            else alert("Video render edildi ancak URL alınamadı.");
+          } else if (rd.status === "failed") {
+            clearInterval(exportPollRef.current!);
+            setExporting(false);
+            alert("Render başarısız: " + (rd.error || rd.message || "Bilinmeyen hata"));
+          }
+        } catch { /* poll hataları görmezden gel */ }
       }, 4000);
     } catch { setExporting(false); alert("Bağlantı hatası."); }
   };

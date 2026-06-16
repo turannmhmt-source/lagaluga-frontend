@@ -136,9 +136,13 @@ export default function Editor() {
 
   // Sync video play/pause with playing state (allows audio unlike autoPlay+muted)
   useEffect(() => {
-    if (!videoRef.current) return;
-    if (playing) { videoRef.current.play().catch(() => {}); }
-    else { videoRef.current.pause(); }
+    const video = videoRef.current;
+    if (!video) return;
+    if (playing) {
+      video.play().catch((e: any) => { if (e.name !== "AbortError") console.error(e); });
+    } else {
+      video.pause();
+    }
   }, [playing]);
 
   // Auth

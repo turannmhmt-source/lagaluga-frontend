@@ -316,8 +316,14 @@ export default function Dashboard() {
   };
 
   const handleToolAction = async (tool: typeof TOOLS[number]) => {
+    console.log("Araç tıklandı:", tool.key, "toolMedia:", toolMedia, "objectDesc:", objectDesc);
+    if (!toolMedia?.file && tool.accept !== "") {
+      setToolError("Lütfen önce bir dosya yükleyin.");
+      return;
+    }
     setIsProcessingTool(true); setToolResult(""); setToolResultUrl(""); setToolError("");
 
+    console.log("API isteği gönderiliyor:", `/tools/${tool.key}`);
     const form = new FormData();
     if (toolMedia?.file) form.append("file", toolMedia.file);
 
@@ -343,7 +349,7 @@ export default function Dashboard() {
 
     try {
       const data = await callApi(`/tools/${tool.key}`, { method: "POST", body: form });
-      console.log('[TOOL]', tool.key, data);
+      console.log("Response:", data);
       if (data.status === "completed") {
         setToolResult(data.message || "İşlem tamamlandı.");
         if (data.result_url) setToolResultUrl(data.result_url);
@@ -351,6 +357,7 @@ export default function Dashboard() {
         setToolError(data.message || "İşlem başarısız oldu. Lütfen tekrar deneyin.");
       }
     } catch (e: any) {
+      console.error("Hata:", e);
       setToolError(e?.message || "İşlem sırasında hata oluştu. Lütfen tekrar deneyin.");
     } finally {
       setIsProcessingTool(false);
@@ -523,6 +530,12 @@ export default function Dashboard() {
               </div>
             )}
 
+            {!isProcessingTool && (toolResult || toolError) && (
+              <button onClick={() => handleToolAction(tool)} disabled={!canSubmit} style={{ width: "100%", padding: "14px", borderRadius: "12px", background: canSubmit ? "linear-gradient(135deg,#EC4899,#F97316)" : "#E2E8F0", color: canSubmit ? "#fff" : "#94A3B8", border: "none", cursor: canSubmit ? "pointer" : "not-allowed", fontSize: "15px", fontWeight: 700, marginTop: "8px" }}>
+                🔄 Tekrar Dene
+              </button>
+            )}
+
             {!toolResult && !toolError && (
               isProcessingTool ? (
                 <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "16px", background: "#F8FAFC", borderRadius: "10px" }}>
@@ -548,8 +561,8 @@ export default function Dashboard() {
             )}
 
             {toolError && (
-              <div style={{ padding: "16px", background: "#FFF7ED", borderRadius: "10px", border: "1px solid #FED7AA", marginTop: "12px" }}>
-                <div style={{ fontSize: "14px", color: "#C2410C", fontWeight: 600 }}>⏳ {toolError}</div>
+              <div style={{ padding: "16px", background: "#FFF1F2", borderRadius: "10px", border: "1px solid #FECDD3", marginTop: "12px" }}>
+                <div style={{ fontSize: "14px", color: "#E11D48", fontWeight: 600 }}>❌ {toolError}</div>
               </div>
             )}
 

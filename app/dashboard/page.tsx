@@ -92,6 +92,9 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchType, setSearchType] = useState<"all"|"videos"|"images">("all");
   const [isSearching, setIsSearching] = useState(false);
+  const [trendingVideos, setTrendingVideos] = useState<string[]>([]);
+  const [trendingImages, setTrendingImages] = useState<string[]>([]);
+  const [trendingLoaded, setTrendingLoaded] = useState(false);
   const [searchVideos, setSearchVideos] = useState<string[]>([]);
   const [searchImages, setSearchImages] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -109,6 +112,15 @@ export default function Dashboard() {
       });
     });
   }, [router]);
+
+  useEffect(() => {
+    if (!user || trendingLoaded) return;
+    setTrendingLoaded(true);
+    fetch(`${API}/scenarios/trending`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) { setTrendingVideos(d.videos || []); setTrendingImages(d.images || []); } })
+      .catch(() => {});
+  }, [user, trendingLoaded]);
 
   useEffect(() => {
     return () => {
@@ -765,6 +777,40 @@ export default function Dashboard() {
                   {images.map((img, i) => (
                     <div key={i} className="media-item" onClick={() => setLightbox(img)} style={{ borderRadius: "10px", overflow: "hidden", border: "1px solid #F1F5F9", height: "110px" }}>
                       <img src={img} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ANA EKRAN GALERİSİ */}
+        {(trendingVideos.length > 0 || trendingImages.length > 0) && (
+          <div style={{ marginBottom: "32px" }}>
+            <div style={{ fontSize: "11px", fontWeight: 700, color: "#94A3B8", marginBottom: "10px", textTransform: "uppercase", letterSpacing: "1.5px" }}>🌟 Öne Çıkan Telifsiz İçerikler</div>
+            {trendingVideos.length > 0 && (
+              <div style={{ marginBottom: "16px" }}>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A", marginBottom: "10px" }}>🎥 Videolar</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: "10px" }}>
+                  {trendingVideos.slice(0,8).map((v, i) => (
+                    <div key={i} className="card" style={{ borderRadius: "10px", overflow: "hidden", border: "1px solid #F1F5F9", background: "#fff" }}>
+                      <video style={{ width: "100%", height: "110px", objectFit: "cover", display: "block" }} src={v} muted onMouseOver={e => (e.target as HTMLVideoElement).play()} onMouseOut={e => { const vid = e.target as HTMLVideoElement; vid.pause(); vid.currentTime = 0; }} />
+                      <div style={{ padding: "6px" }}>
+                        <button onClick={() => handleDownload(v, `video-${i+1}.mp4`)} style={{ width: "100%", padding: "5px", borderRadius: "6px", background: "#FFF0F7", color: "#EC4899", border: "none", cursor: "pointer", fontSize: "11px", fontWeight: 600 }}>⬇️ İndir</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {trendingImages.length > 0 && (
+              <div>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A", marginBottom: "10px" }}>🖼️ Görseller</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))", gap: "8px" }}>
+                  {trendingImages.slice(0,16).map((img, i) => (
+                    <div key={i} className="media-item" onClick={() => setLightbox(img)} style={{ borderRadius: "8px", overflow: "hidden", height: "90px" }}>
+                      <img src={img} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
                     </div>
                   ))}
                 </div>

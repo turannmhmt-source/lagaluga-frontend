@@ -202,6 +202,9 @@ export default function Dashboard() {
     for (const [hint, fmt] of FORMAT_HINTS) {
       if (lowerInput.includes(hint)) { setFormat(fmt); break; }
     }
+    if (lowerInput.includes("seslendir") || lowerInput.includes("seslendirme") || lowerInput.includes("ses ekle") || lowerInput.includes("ses ver") || lowerInput.includes("voiceover")) {
+      setAddVoice(true);
+    }
 
     const urlToSend = isUrl ? cleanUrl : `topic:${cleanUrl}`;
     try {

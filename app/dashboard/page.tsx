@@ -365,8 +365,12 @@ export default function Dashboard() {
       const res = await fetch(`${API}/tools/${tool.key}`, { method: "POST", body: form });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      setToolResult(data.message || "İşlem tamamlandı.");
-      if (data.result_url) setToolResultUrl(data.result_url);
+      if (data.status === "completed") {
+        setToolResult(data.message || "İşlem tamamlandı.");
+        if (data.result_url) setToolResultUrl(data.result_url);
+      } else {
+        setToolError(data.message || "İşlem başarısız oldu. Lütfen tekrar deneyin.");
+      }
     } catch (e: any) {
       setToolError(e?.message || "İşlem sırasında hata oluştu. Lütfen tekrar deneyin.");
     } finally {

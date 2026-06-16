@@ -563,6 +563,7 @@ export default function Dashboard() {
         <div style={{ fontSize: "22px", fontWeight: 900, color: "#0F172A" }}>laga<span style={{ color: "#EC4899" }}>luga</span></div>
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           <div style={{ background: "#FFF0F7", border: "1px solid rgba(236,72,153,0.2)", borderRadius: "100px", padding: "6px 16px", fontSize: "13px", color: "#EC4899", fontWeight: 700 }}>⚡ {credits} Kredi</div>
+          <a href="/editor" style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", cursor: "pointer", fontSize: "13px", fontWeight: 700, textDecoration: "none" }}>🎬 Video Editörü</a>
           <div style={{ fontSize: "13px", color: "#64748B" }}>{user.email}</div>
           <button onClick={handleLogout} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "13px", color: "#64748B" }}>Çıkış</button>
         </div>

@@ -134,6 +134,13 @@ export default function Editor() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Sync video play/pause with playing state (allows audio unlike autoPlay+muted)
+  useEffect(() => {
+    if (!videoRef.current) return;
+    if (playing) { videoRef.current.play().catch(() => {}); }
+    else { videoRef.current.pause(); }
+  }, [playing]);
+
   // Auth
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -207,7 +214,7 @@ export default function Editor() {
       const form = new FormData();
       form.append("file", file);
       form.append("description", "arka planı kaldır");
-      const res = await fetch(`${API}/tools/object-remove`, { method: "POST", body: form });
+      const res = await fetch(`${API}/tools/bg-remove`, { method: "POST", body: form });
       const d = await res.json();
       if (d.status === "completed") setToolResult(d.result_url);
       else setToolError(d.message);
@@ -684,7 +691,7 @@ export default function Editor() {
     return (
       <div style={{ position: "relative", width: w, height: h, background: "#000", borderRadius: "12px", overflow: "hidden", boxShadow: "0 8px 32px rgba(236,72,153,0.15)", flexShrink: 0 }}>
         {currentClip ? (
-          <video key={currentClip.id} src={currentClip.url} style={{ width: "100%", height: "100%", objectFit: "contain", filter: filter.css !== "none" ? filter.css : undefined }} autoPlay={playing} muted />
+          <video ref={videoRef} key={currentClip.id} src={currentClip.url} style={{ width: "100%", height: "100%", objectFit: "contain", filter: filter.css !== "none" ? filter.css : undefined }} onCanPlay={() => { if (playing) videoRef.current?.play(); }} />
         ) : (
           <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#475569" }}>
             <div style={{ fontSize: "48px", marginBottom: "8px" }}>🎬</div>

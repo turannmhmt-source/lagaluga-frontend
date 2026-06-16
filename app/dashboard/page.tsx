@@ -221,9 +221,9 @@ export default function Dashboard() {
         // Krediyi Supabase RPC ile güvenli şekilde düş, yoksa direkt update
         const supabase = getSupabase();
         if (user?.id) {
-          const { error: rpcErr } = await supabase.rpc("use_credit", { uid: user.id });
+          const { error: rpcErr } = await (supabase as any).rpc("use_credit", { uid: user.id });
           if (rpcErr) {
-            await supabase.from("profiles").update({ credits: Math.max(0, credits - 1) }).eq("id", user.id);
+            await (supabase as any).from("profiles").update({ credits: Math.max(0, credits - 1) }).eq("id", user.id);
           }
         }
         setCredits(c => Math.max(0, c - 1));

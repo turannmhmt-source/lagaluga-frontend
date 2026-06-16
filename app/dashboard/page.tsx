@@ -356,7 +356,7 @@ export default function Dashboard() {
       setToolResult(data.message || "İşlem tamamlandı.");
       if (data.result_url) setToolResultUrl(data.result_url);
     } catch (e: any) {
-      setToolError("Bu özellik için backend entegrasyonu yakında tamamlanacak.");
+      setToolError(e?.message || "İşlem sırasında hata oluştu. Lütfen tekrar deneyin.");
     } finally {
       setIsProcessingTool(false);
     }

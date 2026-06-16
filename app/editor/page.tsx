@@ -140,6 +140,7 @@ export default function Editor() {
       if (!data.session) { router.push("/auth"); return; }
       setUser(data.session.user);
     });
+    return () => { if (exportPollRef.current) clearInterval(exportPollRef.current); };
   }, [router]);
 
   const totalDur = clips.reduce((s, c) => s + (c.trimEnd - c.trimStart), 0);
@@ -683,7 +684,7 @@ export default function Editor() {
     return (
       <div style={{ position: "relative", width: w, height: h, background: "#000", borderRadius: "12px", overflow: "hidden", boxShadow: "0 8px 32px rgba(236,72,153,0.15)", flexShrink: 0 }}>
         {currentClip ? (
-          <video key={currentClip.id} src={currentClip.url} style={{ width: "100%", height: "100%", objectFit: "contain", filter: filter.css !== "none" ? filter.css : undefined }} autoPlay={playing} muted={false} />
+          <video key={currentClip.id} src={currentClip.url} style={{ width: "100%", height: "100%", objectFit: "contain", filter: filter.css !== "none" ? filter.css : undefined }} autoPlay={playing} muted />
         ) : (
           <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#475569" }}>
             <div style={{ fontSize: "48px", marginBottom: "8px" }}>🎬</div>

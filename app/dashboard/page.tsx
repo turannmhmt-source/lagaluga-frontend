@@ -102,8 +102,8 @@ export default function Dashboard() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) { router.push("/auth"); return; }
       setUser(session.user);
-      supabase.from("profiles").select("credits").eq("id", session.user.id).single().then(({ data }) => {
-        if (data?.credits !== undefined) setCredits(data.credits);
+      supabase.from("profiles").select("credits").eq("id", session.user.id).single().then(({ data, error }) => {
+        if (!error && data && typeof (data as any).credits !== "undefined") setCredits((data as any).credits);
       });
     });
   }, [router]);

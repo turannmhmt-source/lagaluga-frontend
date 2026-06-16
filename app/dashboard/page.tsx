@@ -184,9 +184,26 @@ export default function Dashboard() {
     setRenderedVideo(""); setRenderMessage(null); setPageScreenshots([]);
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
 
-    const isUrl = input.startsWith("http://") || input.startsWith("https://");
-    const urlToSend = isUrl ? input : `topic:${input}`;
+    // Kullanıcı "https://site.com tanıtım yap" gibi karışık metin girebilir
+    // → URL'yi ayıkla, geri kalan metni yok say; format ipuçlarını otomatik algıla
+    const urlMatch = input.match(/https?:\/\/[^\s]+/);
+    const cleanUrl = urlMatch ? urlMatch[0].replace(/[/)]+$/, "") : input.trim();
+    const isUrl = !!urlMatch;
 
+    const FORMAT_HINTS: [string, string][] = [
+      ["hikaye", "9:16-story"], ["story", "9:16-story"], ["durum", "9:16-story"], ["whatsapp", "9:16-story"],
+      ["reels", "9:16-reels"], ["reel", "9:16-reels"], ["instagram", "9:16-reels"],
+      ["tiktok", "9:16-tiktok"], ["tik tok", "9:16-tiktok"],
+      ["shorts", "9:16-shorts"], ["youtube shorts", "9:16-shorts"],
+      ["youtube", "16:9"], ["yatay", "16:9"], ["geniş", "16:9"],
+      ["kare", "1:1"], ["gönderi", "1:1"], ["linkedin", "1:1"],
+    ];
+    const lowerInput = input.toLowerCase();
+    for (const [hint, fmt] of FORMAT_HINTS) {
+      if (lowerInput.includes(hint)) { setFormat(fmt); break; }
+    }
+
+    const urlToSend = isUrl ? cleanUrl : `topic:${cleanUrl}`;
     try {
       const res = await fetch(`${API}/projects/analyze`, {
         method: "POST",

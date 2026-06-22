@@ -93,6 +93,10 @@ export default function Dashboard() {
   const [trendingLoaded, setTrendingLoaded] = useState(false);
   const [searchVideos, setSearchVideos] = useState<string[]>([]);
   const [searchImages, setSearchImages] = useState<string[]>([]);
+  const [history, setHistory] = useState<{ id: string; title: string; url: string; created_at: string }[]>([]);
+  const [editingScenario, setEditingScenario] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editSummary, setEditSummary] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toolFileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<any>(null);
@@ -116,6 +120,28 @@ export default function Dashboard() {
     callApi('/scenarios/trending')
       .then(d => { if (d) { setTrendingVideos(d.videos || []); setTrendingImages(d.images || []); } })
       .catch(() => {});
+    // Geçmiş videoları yükle
+    const supabase = getSupabase();
+    (supabase as any).from("tasks")
+      .select("id,input,result,created_at")
+      .eq("user_id", user.id)
+      .eq("type", "render")
+      .eq("status", "completed")
+      .order("created_at", { ascending: false })
+      .limit(10)
+      .then(({ data }: any) => {
+        if (data) {
+          const vids = data
+            .filter((t: any) => t.result?.rendered_video)
+            .map((t: any) => ({
+              id: t.id,
+              title: t.input?.title || "Video",
+              url: t.result.rendered_video,
+              created_at: t.created_at,
+            }));
+          setHistory(vids);
+        }
+      });
   }, [user, trendingLoaded]);
 
   useEffect(() => {
@@ -705,14 +731,27 @@ export default function Dashboard() {
             <div style={{ fontSize: "15px", fontWeight: 700, color: "#0F172A", marginBottom: "12px" }}>🎬 Video Senaryoları</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: "12px" }}>
               {scenarios.map(s => (
-                <button key={s.id} onClick={() => setSelectedId(s.id)} className="card" style={{ padding: "20px", borderRadius: "14px", border: `1.5px solid ${selectedId === s.id ? "#EC4899" : "#E2E8F0"}`, background: selectedId === s.id ? "#FFF0F7" : "#fff", cursor: "pointer", textAlign: "left" }}>
+                <div key={s.id} className="card" style={{ padding: "20px", borderRadius: "14px", border: `1.5px solid ${selectedId === s.id ? "#EC4899" : "#E2E8F0"}`, background: selectedId === s.id ? "#FFF0F7" : "#fff", cursor: "pointer", textAlign: "left" }} onClick={() => { setSelectedId(s.id); setEditingScenario(null); }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
                     <div style={{ fontSize: "11px", fontWeight: 700, color: "#EC4899", textTransform: "uppercase", letterSpacing: "1px" }}>{s.style}</div>
-                    <div style={{ fontSize: "11px", color: "#94A3B8", background: "#F1F5F9", padding: "2px 8px", borderRadius: "100px" }}>⏱ {s.duration}</div>
+                    <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                      <div style={{ fontSize: "11px", color: "#94A3B8", background: "#F1F5F9", padding: "2px 8px", borderRadius: "100px" }}>⏱ {s.duration}</div>
+                      <button onClick={e => { e.stopPropagation(); setEditingScenario(s.id); setEditTitle(s.title); setEditSummary(s.summary); setSelectedId(s.id); }} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: "13px", color: "#94A3B8", padding: "2px 6px", borderRadius: "6px" }} title="Düzenle">✏️</button>
+                    </div>
                   </div>
-                  <div style={{ fontSize: "15px", fontWeight: 700, color: "#0F172A", marginBottom: "8px" }}>{s.title}</div>
-                  <div style={{ fontSize: "13px", color: "#64748B", lineHeight: 1.7 }}>{s.summary}</div>
-                </button>
+                  {editingScenario === s.id ? (
+                    <div onClick={e => e.stopPropagation()}>
+                      <input value={editTitle} onChange={e => { setEditTitle(e.target.value); setScenarios(prev => prev!.map(x => x.id === s.id ? { ...x, title: e.target.value } : x)); }} style={{ width: "100%", padding: "8px 10px", borderRadius: "8px", border: "1.5px solid #EC4899", fontSize: "14px", fontWeight: 700, color: "#0F172A", outline: "none", marginBottom: "8px", boxSizing: "border-box" }} />
+                      <textarea value={editSummary} onChange={e => { setEditSummary(e.target.value); setScenarios(prev => prev!.map(x => x.id === s.id ? { ...x, summary: e.target.value } : x)); }} style={{ width: "100%", padding: "8px 10px", borderRadius: "8px", border: "1.5px solid #EC4899", fontSize: "13px", color: "#64748B", outline: "none", minHeight: "80px", resize: "vertical", boxSizing: "border-box", lineHeight: 1.6 }} />
+                      <button onClick={e => { e.stopPropagation(); setEditingScenario(null); }} style={{ marginTop: "8px", padding: "6px 14px", borderRadius: "6px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: 700 }}>✓ Kaydet</button>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: "15px", fontWeight: 700, color: "#0F172A", marginBottom: "8px" }}>{s.title}</div>
+                      <div style={{ fontSize: "13px", color: "#64748B", lineHeight: 1.7 }}>{s.summary}</div>
+                    </>
+                  )}
+                </div>
               ))}
             </div>
 
@@ -885,6 +924,25 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+
+        {/* GEÇMİŞ VİDEOLAR */}
+        {history.length > 0 && (
+          <div style={{ marginBottom: "32px" }}>
+            <div style={{ fontSize: "11px", fontWeight: 700, color: "#94A3B8", marginBottom: "10px", textTransform: "uppercase", letterSpacing: "1.5px" }}>📼 Geçmiş Videolarım</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: "12px" }}>
+              {history.map(v => (
+                <div key={v.id} className="card" style={{ borderRadius: "12px", overflow: "hidden", border: "1px solid #F1F5F9", background: "#fff" }}>
+                  <video controls style={{ width: "100%", height: "130px", objectFit: "cover", display: "block" }} src={v.url} />
+                  <div style={{ padding: "10px" }}>
+                    <div style={{ fontSize: "12px", fontWeight: 600, color: "#0F172A", marginBottom: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.title || "Video"}</div>
+                    <div style={{ fontSize: "10px", color: "#94A3B8", marginBottom: "6px" }}>{new Date(v.created_at).toLocaleDateString("tr-TR")}</div>
+                    <button onClick={() => handleDownload(v.url, `lagaluga-${v.id.slice(0,8)}.mp4`)} style={{ width: "100%", padding: "6px", borderRadius: "6px", background: "#FFF0F7", color: "#EC4899", border: "none", cursor: "pointer", fontSize: "11px", fontWeight: 600 }}>⬇️ İndir</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* AI ARAÇLAR */}
         <div>

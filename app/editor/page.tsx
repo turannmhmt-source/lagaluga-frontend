@@ -119,6 +119,7 @@ export default function Editor() {
   const [exporting, setExporting] = useState(false);
   const [exportUrl, setExportUrl] = useState("");
   const [exportTaskId, setExportTaskId] = useState("");
+  const [editorMsg, setEditorMsg] = useState<{text: string; isError: boolean} | null>(null);
   const exportPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Refs
@@ -158,7 +159,7 @@ export default function Editor() {
       const pd = await callApi('/editor/probe', { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: resultUrl }) });
       const dur = pd.duration_sec || 10;
       setClips(prev => [...prev, { id: crypto.randomUUID(), url: resultUrl, name: file.name, dur, trimStart: 0, trimEnd: dur }]);
-    } catch (e) { alert("Yükleme hatası: " + e); }
+    } catch (e) { setEditorMsg({ text: "Yükleme hatası: " + e, isError: true }); }
     setUploading(false);
   };
 
@@ -242,7 +243,7 @@ export default function Editor() {
 
   // ── Export ──
   const startExport = async () => {
-    if (clips.length === 0) { alert("Önce klip ekleyin."); return; }
+    if (clips.length === 0) { setEditorMsg({ text: "Önce klip ekleyin.", isError: true }); return; }
     setExporting(true); setExportUrl("");
     try {
       const timeline = {
@@ -256,7 +257,7 @@ export default function Editor() {
         musicVolumePercent: musicVol,
       };
       const d = await callApi('/editor/render', { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ timeline, user_id: user?.id || "" }) });
-      if (!d.task_id) { setExporting(false); alert(d.message || "Render başlatılamadı."); return; }
+      if (!d.task_id) { setExporting(false); setEditorMsg({ text: d.message || "Render başlatılamadı.", isError: true }); return; }
       setExportTaskId(d.task_id);
       exportPollRef.current = setInterval(async () => {
         try {
@@ -265,16 +266,16 @@ export default function Editor() {
             clearInterval(exportPollRef.current!);
             setExporting(false);
             const videoUrl = rd.result?.rendered_video || "";
-            if (videoUrl) { setExportUrl(videoUrl); setActiveTool("export"); }
-            else alert("Video render edildi ancak URL alınamadı.");
+            if (videoUrl) { setExportUrl(videoUrl); setActiveTool("export"); setEditorMsg({ text: "✅ Video hazır!", isError: false }); }
+            else setEditorMsg({ text: "Video render edildi ancak URL alınamadı.", isError: true });
           } else if (rd.status === "failed") {
             clearInterval(exportPollRef.current!);
             setExporting(false);
-            alert("Render başarısız: " + (rd.error || rd.message || "Bilinmeyen hata"));
+            setEditorMsg({ text: "Render başarısız: " + (rd.error || rd.message || "Bilinmeyen hata"), isError: true });
           }
         } catch { /* poll hataları görmezden gel */ }
       }, 4000);
-    } catch { setExporting(false); alert("Bağlantı hatası."); }
+    } catch (e: any) { setExporting(false); setEditorMsg({ text: e.message || "Bağlantı hatası.", isError: true }); }
   };
 
   const selText = texts.find(t => t.id === selectedTextId);
@@ -299,6 +300,11 @@ export default function Editor() {
         <select value={format} onChange={e => setFormat(e.target.value)} style={{ padding: "6px 10px", borderRadius: "8px", border: "1.5px solid #FCE7F3", fontSize: "12px", fontWeight: 600, color: "#0F172A", background: "#fff", cursor: "pointer" }}>
           {FORMATS.map(f => <option key={f.id} value={f.id}>{f.icon} {f.label}</option>)}
         </select>
+        {editorMsg && (
+          <div onClick={() => setEditorMsg(null)} style={{ padding: "6px 14px", borderRadius: "8px", background: editorMsg.isError ? "#FFF1F2" : "#F0FDF4", color: editorMsg.isError ? "#E11D48" : "#16A34A", fontSize: "12px", fontWeight: 600, cursor: "pointer", maxWidth: "260px" }}>
+            {editorMsg.text}
+          </div>
+        )}
         <a href="/dashboard" style={{ padding: "7px 14px", borderRadius: "8px", border: "1.5px solid #FCE7F3", fontSize: "13px", color: "#64748B", textDecoration: "none", fontWeight: 600 }}>← Dashboard</a>
         <button onClick={startExport} disabled={exporting || clips.length === 0}
           style={{ padding: "8px 20px", borderRadius: "10px", border: "none", background: clips.length === 0 ? "#E2E8F0" : pinkGrad, color: clips.length === 0 ? "#94A3B8" : "#fff", fontWeight: 700, fontSize: "14px", cursor: clips.length === 0 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: "6px" }}>

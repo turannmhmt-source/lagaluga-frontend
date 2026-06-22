@@ -179,7 +179,6 @@ export default function Editor() {
       form.append("text", voiceText);
       form.append("voice", voiceVoice);
       const d = await callApi('/tools/voiceover', { method: "POST", body: form });
-      console.log('[TOOL] voiceover', d);
       if (d.status === "completed") setToolResult(d.result_url);
       else setToolError(d.message || "İşlem başarısız.");
     } catch (e: any) { setToolError(e.message || "Hata oluştu."); }
@@ -194,7 +193,6 @@ export default function Editor() {
       form.append("file", file);
       form.append("language", subtitleLang);
       const d = await callApi('/tools/subtitle', { method: "POST", body: form });
-      console.log('[TOOL] subtitle', d);
       if (d.status === "completed") setToolResult(d.result_url);
       else setToolError(d.message || "İşlem başarısız.");
     } catch (e: any) { setToolError(e.message || "Hata oluştu."); }
@@ -209,13 +207,10 @@ export default function Editor() {
       form.append("file", file);
       form.append("description", "arka planı kaldır");
       const d = await callApi('/tools/bg-remove', { method: "POST", body: form });
-      console.log('[TOOL] bg-remove', d);
       if (d.status === "completed") setToolResult(d.result_url);
       else setToolError(d.message || "İşlem başarısız.");
     } catch (e: any) {
-      // REMOVEBG_API_KEY yoksa hata verme, sessizce geç
-      console.warn('[bg-remove] hata:', e.message);
-      setToolError("Arka plan silme şu an kullanılamıyor. Yakında aktif olacak.");
+      setToolError(e.message || "Arka plan silme şu an kullanılamıyor.");
     }
     setToolLoading(false);
   };

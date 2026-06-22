@@ -2,21 +2,13 @@
 import { useRef, useState } from "react";
 import { useEditor } from "../EditorProvider";
 import { Clip } from "../types";
+import { callApi, uploadFile } from "@/lib/api";
 
-const API = "https://lagaluga-backend-production.up.railway.app";
-
-async function probeVideo(url: string): Promise<number> {
-  try {
-    const res = await fetch(`${API}/editor/probe`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
-    if (res.ok) { const d = await res.json(); return d.duration_sec ?? 10; }
-  } catch {}
-  return 10;
-}
-
-export default function Toolbar({ playheadSec, selectedClipId, onExport }: {
+export default function Toolbar({ playheadSec, selectedClipId, onExport, onError }: {
   playheadSec: number;
   selectedClipId: string | null;
   onExport: () => void;
+  onError?: (msg: string) => void;
 }) {
   const { dispatch, computedClips } = useEditor();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -27,22 +19,17 @@ export default function Toolbar({ playheadSec, selectedClipId, onExport }: {
     if (!file) return;
     setUploading(true);
     try {
-      const form = new FormData();
-      form.append("file", file);
-      const res = await fetch(`${API}/tools/upload`, { method: "POST", body: form });
-      if (!res.ok) throw new Error("Upload failed");
-      const data = await res.json();
-      const url = data.result_url;
-      if (!url) throw new Error("No URL");
-      const duration = await probeVideo(url);
+      const url = await uploadFile(file);
+      const pd = await callApi('/editor/probe', { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
+      const duration = pd.duration_sec ?? 10;
       const clip: Clip = {
         id: crypto.randomUUID(), sourceUrl: url, sourceDurationSec: duration,
         trimStartSec: 0, trimEndSec: duration, orderIndex: 0,
         transitionIn: { type: "fade", durationMs: 500 },
       };
       dispatch({ type: "ADD_CLIP", clip });
-    } catch (err) {
-      alert("Yükleme başarısız: " + err);
+    } catch (err: any) {
+      onError?.("Yükleme başarısız: " + (err.message || err));
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -51,7 +38,7 @@ export default function Toolbar({ playheadSec, selectedClipId, onExport }: {
 
   const handleSplit = () => {
     const clip = computedClips.find(c => playheadSec >= c.timelineStartSec && playheadSec < c.timelineEndSec);
-    if (!clip) return alert("Önce kesmek istediğiniz klibin üzerine playhead'i getirin.");
+    if (!clip) { onError?.("Önce kesmek istediğiniz klibin üzerine playhead'i getirin."); return; }
     dispatch({ type: "SPLIT_CLIP", id: clip.id, splitAtTimelineSec: playheadSec });
   };
 

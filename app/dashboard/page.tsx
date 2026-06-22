@@ -154,7 +154,7 @@ export default function Dashboard() {
 
   const startListening = () => {
     const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
-    if (!SpeechRecognition) { alert("Tarayıcınız sesli komut desteklemiyor. Chrome kullanın."); return; }
+    if (!SpeechRecognition) { setError("Tarayıcınız sesli komut desteklemiyor. Chrome kullanın."); return; }
     const recognition = new SpeechRecognition();
     recognition.lang = "tr-TR";
     recognition.continuous = false;
@@ -344,14 +344,12 @@ export default function Dashboard() {
   };
 
   const handleToolAction = async (tool: typeof TOOLS[number]) => {
-    console.log("Araç tıklandı:", tool.key, "toolMedia:", toolMedia, "objectDesc:", objectDesc);
     if (!toolMedia?.file && tool.accept !== "") {
       setToolError("Lütfen önce bir dosya yükleyin.");
       return;
     }
     setIsProcessingTool(true); setToolResult(""); setToolResultUrl(""); setToolError("");
 
-    console.log("API isteği gönderiliyor:", `/tools/${tool.key}`);
     const form = new FormData();
     if (toolMedia?.file) form.append("file", toolMedia.file);
 
@@ -377,7 +375,6 @@ export default function Dashboard() {
 
     try {
       const data = await callApi(`/tools/${tool.key}`, { method: "POST", body: form });
-      console.log("Response:", data);
       if (data.status === "completed") {
         setToolResult(data.message || "İşlem tamamlandı.");
         if (data.result_url) setToolResultUrl(data.result_url);
@@ -397,7 +394,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(url); const blob = await res.blob();
       const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click();
-    } catch { alert("İndirme başarısız."); }
+    } catch { setToolError("İndirme başarısız. Linki yeni sekmede açmayı deneyin."); }
   };
 
   const handleSearch = async () => {

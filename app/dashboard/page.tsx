@@ -257,8 +257,8 @@ export default function Dashboard() {
         setCredits(c => Math.max(0, c - 1));
         pollRef.current = setInterval(() => pollTask(data.task_id), 3000);
         setTimeout(() => {
-          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; setIsAnalyzing(false); setAnalyzeStep(""); setError("Zaman aşımı."); }
-        }, 60000);
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; setIsAnalyzing(false); setAnalyzeStep(""); setError("Sunucu yanıt vermedi. Lütfen tekrar deneyin."); }
+        }, 180000);
       } else if (data.scenarios) {
         setIsAnalyzing(false); setAnalyzeStep("");
         setScenarios(data.scenarios); setCredits(c => Math.max(0, c - 1));

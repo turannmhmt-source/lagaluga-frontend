@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Allow: /auth
+Disallow: /dashboard
+Disallow: /editor
+Disallow: /profile
+Disallow: /api/
+
+Sitemap: https://lagaluga-frontend.vercel.app/sitemap.xml

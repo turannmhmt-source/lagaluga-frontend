@@ -93,6 +93,11 @@ export default function AuthClient() {
             {mode === "login" ? "Kayıt Ol" : "Giriş Yap"}
           </span>
         </div>
+        {mode === "login" && (
+          <div style={{ textAlign: "center", marginTop: "12px", fontSize: "13px" }}>
+            <a href="/auth/reset" style={{ color: "#94A3B8", textDecoration: "none" }}>Şifremi Unuttum</a>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import CookieBanner from "@/components/CookieBanner";
 
 const phrases = ["video içerikleri","sosyal medya postları","TikTok senaryoları","YouTube videoları","Instagram Reels","pazarlama metinleri"];
 
@@ -171,14 +172,16 @@ export default function Home() {
         </Link>
       </section>
 
+      <CookieBanner />
+
       {/* FOOTER */}
       <footer style={{padding:"28px 80px",borderTop:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"12px"}}>
         <div style={{fontSize:"20px",fontWeight:900,color:"#0F172A"}}>laga<span style={{color:"#EC4899"}}>luga</span></div>
         <div style={{fontSize:"13px",color:"#94A3B8"}}>© 2026 Lagaluga. Tüm hakları saklıdır.</div>
         <div style={{display:"flex",gap:"20px",fontSize:"13px"}}>
-          <a href="#" style={{color:"#94A3B8",textDecoration:"none"}}>Gizlilik</a>
-          <a href="#" style={{color:"#94A3B8",textDecoration:"none"}}>Kullanım Şartları</a>
-          <a href="#" style={{color:"#94A3B8",textDecoration:"none"}}>İletişim</a>
+          <a href="/privacy" style={{color:"#94A3B8",textDecoration:"none"}}>Gizlilik</a>
+          <a href="/terms" style={{color:"#94A3B8",textDecoration:"none"}}>Kullanım Şartları</a>
+          <a href="/faq" style={{color:"#94A3B8",textDecoration:"none"}}>SSS</a>
         </div>
       </footer>
     </div>

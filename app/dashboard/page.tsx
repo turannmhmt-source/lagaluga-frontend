@@ -21,6 +21,7 @@ const FORMATS: Record<string, { label: string; icon: string; sub: string }> = {
 const TOOLS = [
   { key: "object-remove", icon: "🎨", label: "AI Nesne Silici", desc: "Görselden istenmeyen nesne kaldır", accept: "image/*", active: true },
   { key: "text-edit", icon: "✏️", label: "Yazı Değiştirici", desc: "Font yapısını koruyarak metin düzenle", accept: "image/*", active: true },
+  { key: "bg-remove", icon: "🖼️", label: "Arkaplan Silici", desc: "Görselden arka planı otomatik kaldır", accept: "image/*", active: true },
   { key: "subtitle", icon: "💬", label: "Otomatik Altyazı", desc: "AI ile saniyeler içinde altyazı", accept: "video/*", active: true },
   { key: "voiceover", icon: "🎵", label: "AI Seslendirme", desc: "Türkçe profesyonel ses üret", accept: "", active: true },
   { key: "studio-audio", icon: "🎤", label: "Stüdyo Kalitesi", desc: "Amatör sesi profesyonele dönüştür", accept: "audio/*,video/*", active: true },
@@ -72,6 +73,7 @@ export default function Dashboard() {
   const [toolResult, setToolResult] = useState<string>("");
   const [toolResultUrl, setToolResultUrl] = useState<string>("");
   const [toolError, setToolError] = useState<string>("");
+  const [toolResultsMap, setToolResultsMap] = useState<Record<string, string>>({});
   const [objectDesc, setObjectDesc] = useState("");
   const [oldText, setOldText] = useState("");
   const [newText, setNewText] = useState("");
@@ -91,6 +93,10 @@ export default function Dashboard() {
   const [trendingLoaded, setTrendingLoaded] = useState(false);
   const [searchVideos, setSearchVideos] = useState<string[]>([]);
   const [searchImages, setSearchImages] = useState<string[]>([]);
+  const [history, setHistory] = useState<{ id: string; title: string; url: string; created_at: string }[]>([]);
+  const [editingScenario, setEditingScenario] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editSummary, setEditSummary] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toolFileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<any>(null);
@@ -114,6 +120,28 @@ export default function Dashboard() {
     callApi('/scenarios/trending')
       .then(d => { if (d) { setTrendingVideos(d.videos || []); setTrendingImages(d.images || []); } })
       .catch(() => {});
+    // Geçmiş videoları yükle
+    const supabase = getSupabase();
+    (supabase as any).from("tasks")
+      .select("id,input,result,created_at")
+      .eq("user_id", user.id)
+      .eq("type", "render")
+      .eq("status", "completed")
+      .order("created_at", { ascending: false })
+      .limit(10)
+      .then(({ data }: any) => {
+        if (data) {
+          const vids = data
+            .filter((t: any) => t.result?.rendered_video)
+            .map((t: any) => ({
+              id: t.id,
+              title: t.input?.title || "Video",
+              url: t.result.rendered_video,
+              created_at: t.created_at,
+            }));
+          setHistory(vids);
+        }
+      });
   }, [user, trendingLoaded]);
 
   useEffect(() => {
@@ -126,7 +154,7 @@ export default function Dashboard() {
 
   const startListening = () => {
     const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
-    if (!SpeechRecognition) { alert("Tarayıcınız sesli komut desteklemiyor. Chrome kullanın."); return; }
+    if (!SpeechRecognition) { setError("Tarayıcınız sesli komut desteklemiyor. Chrome kullanın."); return; }
     const recognition = new SpeechRecognition();
     recognition.lang = "tr-TR";
     recognition.continuous = false;
@@ -221,9 +249,9 @@ export default function Dashboard() {
         // Krediyi Supabase RPC ile güvenli şekilde düş, yoksa direkt update
         const supabase = getSupabase();
         if (user?.id) {
-          const { error: rpcErr } = await supabase.rpc("use_credit", { uid: user.id });
+          const { error: rpcErr } = await (supabase as any).rpc("use_credit", { uid: user.id });
           if (rpcErr) {
-            await supabase.from("profiles").update({ credits: Math.max(0, credits - 1) }).eq("id", user.id);
+            await (supabase as any).from("profiles").update({ credits: Math.max(0, credits - 1) }).eq("id", user.id);
           }
         }
         setCredits(c => Math.max(0, c - 1));
@@ -306,16 +334,20 @@ export default function Dashboard() {
   };
 
   const openTool = (label: string) => {
-    setActiveTool(label); setToolMedia(null); setToolResult(""); setToolResultUrl(""); setToolError("");
+    setActiveTool(label); setToolMedia(null); setToolResult(""); setToolResultUrl(""); setToolError(""); setToolResultsMap({});
     setObjectDesc(""); setOldText(""); setNewText(""); setSubtitleLang("tr");
     setVoiceoverScript(""); setVoiceoverVoice(VOICEOVER_VOICES[0].id); setSocialFormats([]);
   };
 
   const closeToolModal = () => {
-    setActiveTool(null); setToolMedia(null); setToolResult(""); setToolResultUrl(""); setToolError("");
+    setActiveTool(null); setToolMedia(null); setToolResult(""); setToolResultUrl(""); setToolError(""); setToolResultsMap({});
   };
 
   const handleToolAction = async (tool: typeof TOOLS[number]) => {
+    if (!toolMedia?.file && tool.accept !== "") {
+      setToolError("Lütfen önce bir dosya yükleyin.");
+      return;
+    }
     setIsProcessingTool(true); setToolResult(""); setToolResultUrl(""); setToolError("");
 
     const form = new FormData();
@@ -343,14 +375,15 @@ export default function Dashboard() {
 
     try {
       const data = await callApi(`/tools/${tool.key}`, { method: "POST", body: form });
-      console.log('[TOOL]', tool.key, data);
       if (data.status === "completed") {
         setToolResult(data.message || "İşlem tamamlandı.");
         if (data.result_url) setToolResultUrl(data.result_url);
+        if (data.results && Object.keys(data.results).length > 0) setToolResultsMap(data.results);
       } else {
         setToolError(data.message || "İşlem başarısız oldu. Lütfen tekrar deneyin.");
       }
     } catch (e: any) {
+      console.error("Hata:", e);
       setToolError(e?.message || "İşlem sırasında hata oluştu. Lütfen tekrar deneyin.");
     } finally {
       setIsProcessingTool(false);
@@ -361,7 +394,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(url); const blob = await res.blob();
       const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click();
-    } catch { alert("İndirme başarısız."); }
+    } catch { setToolError("İndirme başarısız. Linki yeni sekmede açmayı deneyin."); }
   };
 
   const handleSearch = async () => {
@@ -523,6 +556,12 @@ export default function Dashboard() {
               </div>
             )}
 
+            {!isProcessingTool && (toolResult || toolError) && (
+              <button onClick={() => handleToolAction(tool)} disabled={!canSubmit} style={{ width: "100%", padding: "14px", borderRadius: "12px", background: canSubmit ? "linear-gradient(135deg,#EC4899,#F97316)" : "#E2E8F0", color: canSubmit ? "#fff" : "#94A3B8", border: "none", cursor: canSubmit ? "pointer" : "not-allowed", fontSize: "15px", fontWeight: 700, marginTop: "8px" }}>
+                🔄 Tekrar Dene
+              </button>
+            )}
+
             {!toolResult && !toolError && (
               isProcessingTool ? (
                 <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "16px", background: "#F8FAFC", borderRadius: "10px" }}>
@@ -538,18 +577,26 @@ export default function Dashboard() {
 
             {toolResult && (
               <div style={{ padding: "16px", background: "#F0FDF4", borderRadius: "10px", border: "1px solid #BBF7D0", marginTop: "12px" }}>
-                <div style={{ fontSize: "14px", color: "#16A34A", fontWeight: 600 }}>✅ {toolResult}</div>
-                {(toolResultUrl || toolMedia) && (
-                  <button onClick={() => handleDownload(toolResultUrl || toolMedia!.url, `duzenlenmis-${Date.now()}.${toolMedia?.type === "video" ? "mp4" : "jpg"}`)} style={{ marginTop: "10px", padding: "8px 20px", borderRadius: "8px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "13px", fontWeight: 700 }}>
+                <div style={{ fontSize: "14px", color: "#16A34A", fontWeight: 600, marginBottom: "10px" }}>✅ {toolResult}</div>
+                {Object.keys(toolResultsMap).length > 0 ? (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                    {Object.entries(toolResultsMap).map(([fmt, url]) => (
+                      <button key={fmt} onClick={() => handleDownload(url, `${fmt.replace(/:/g,'-')}.${url.endsWith('.mp4') ? 'mp4' : 'jpg'}`)} style={{ padding: "8px 16px", borderRadius: "8px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: 700 }}>
+                        ⬇️ {FORMATS[fmt]?.label || fmt}
+                      </button>
+                    ))}
+                  </div>
+                ) : (toolResultUrl || toolMedia) ? (
+                  <button onClick={() => handleDownload(toolResultUrl || toolMedia!.url, `duzenlenmis-${Date.now()}.${toolMedia?.type === "video" ? "mp4" : "jpg"}`)} style={{ padding: "8px 20px", borderRadius: "8px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "13px", fontWeight: 700 }}>
                     ⬇️ İndir
                   </button>
-                )}
+                ) : null}
               </div>
             )}
 
             {toolError && (
-              <div style={{ padding: "16px", background: "#FFF7ED", borderRadius: "10px", border: "1px solid #FED7AA", marginTop: "12px" }}>
-                <div style={{ fontSize: "14px", color: "#C2410C", fontWeight: 600 }}>⏳ {toolError}</div>
+              <div style={{ padding: "16px", background: "#FFF1F2", borderRadius: "10px", border: "1px solid #FECDD3", marginTop: "12px" }}>
+                <div style={{ fontSize: "14px", color: "#E11D48", fontWeight: 600 }}>❌ {toolError}</div>
               </div>
             )}
 
@@ -564,7 +611,7 @@ export default function Dashboard() {
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           <div style={{ background: "#FFF0F7", border: "1px solid rgba(236,72,153,0.2)", borderRadius: "100px", padding: "6px 16px", fontSize: "13px", color: "#EC4899", fontWeight: 700 }}>⚡ {credits} Kredi</div>
           <a href="/editor" style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", cursor: "pointer", fontSize: "13px", fontWeight: 700, textDecoration: "none" }}>🎬 Video Editörü</a>
-          <div style={{ fontSize: "13px", color: "#64748B" }}>{user.email}</div>
+          <a href="/profile" style={{ fontSize: "13px", color: "#64748B", textDecoration: "none", padding: "8px 12px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff" }}>👤 {user.email}</a>
           <button onClick={handleLogout} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "13px", color: "#64748B" }}>Çıkış</button>
         </div>
       </nav>
@@ -681,14 +728,27 @@ export default function Dashboard() {
             <div style={{ fontSize: "15px", fontWeight: 700, color: "#0F172A", marginBottom: "12px" }}>🎬 Video Senaryoları</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: "12px" }}>
               {scenarios.map(s => (
-                <button key={s.id} onClick={() => setSelectedId(s.id)} className="card" style={{ padding: "20px", borderRadius: "14px", border: `1.5px solid ${selectedId === s.id ? "#EC4899" : "#E2E8F0"}`, background: selectedId === s.id ? "#FFF0F7" : "#fff", cursor: "pointer", textAlign: "left" }}>
+                <div key={s.id} className="card" style={{ padding: "20px", borderRadius: "14px", border: `1.5px solid ${selectedId === s.id ? "#EC4899" : "#E2E8F0"}`, background: selectedId === s.id ? "#FFF0F7" : "#fff", cursor: "pointer", textAlign: "left" }} onClick={() => { setSelectedId(s.id); setEditingScenario(null); }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
                     <div style={{ fontSize: "11px", fontWeight: 700, color: "#EC4899", textTransform: "uppercase", letterSpacing: "1px" }}>{s.style}</div>
-                    <div style={{ fontSize: "11px", color: "#94A3B8", background: "#F1F5F9", padding: "2px 8px", borderRadius: "100px" }}>⏱ {s.duration}</div>
+                    <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                      <div style={{ fontSize: "11px", color: "#94A3B8", background: "#F1F5F9", padding: "2px 8px", borderRadius: "100px" }}>⏱ {s.duration}</div>
+                      <button onClick={e => { e.stopPropagation(); setEditingScenario(s.id); setEditTitle(s.title); setEditSummary(s.summary); setSelectedId(s.id); }} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: "13px", color: "#94A3B8", padding: "2px 6px", borderRadius: "6px" }} title="Düzenle">✏️</button>
+                    </div>
                   </div>
-                  <div style={{ fontSize: "15px", fontWeight: 700, color: "#0F172A", marginBottom: "8px" }}>{s.title}</div>
-                  <div style={{ fontSize: "13px", color: "#64748B", lineHeight: 1.7 }}>{s.summary}</div>
-                </button>
+                  {editingScenario === s.id ? (
+                    <div onClick={e => e.stopPropagation()}>
+                      <input value={editTitle} onChange={e => { setEditTitle(e.target.value); setScenarios(prev => prev!.map(x => x.id === s.id ? { ...x, title: e.target.value } : x)); }} style={{ width: "100%", padding: "8px 10px", borderRadius: "8px", border: "1.5px solid #EC4899", fontSize: "14px", fontWeight: 700, color: "#0F172A", outline: "none", marginBottom: "8px", boxSizing: "border-box" }} />
+                      <textarea value={editSummary} onChange={e => { setEditSummary(e.target.value); setScenarios(prev => prev!.map(x => x.id === s.id ? { ...x, summary: e.target.value } : x)); }} style={{ width: "100%", padding: "8px 10px", borderRadius: "8px", border: "1.5px solid #EC4899", fontSize: "13px", color: "#64748B", outline: "none", minHeight: "80px", resize: "vertical", boxSizing: "border-box", lineHeight: 1.6 }} />
+                      <button onClick={e => { e.stopPropagation(); setEditingScenario(null); }} style={{ marginTop: "8px", padding: "6px 14px", borderRadius: "6px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: 700 }}>✓ Kaydet</button>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: "15px", fontWeight: 700, color: "#0F172A", marginBottom: "8px" }}>{s.title}</div>
+                      <div style={{ fontSize: "13px", color: "#64748B", lineHeight: 1.7 }}>{s.summary}</div>
+                    </>
+                  )}
+                </div>
               ))}
             </div>
 
@@ -861,6 +921,25 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+
+        {/* GEÇMİŞ VİDEOLAR */}
+        {history.length > 0 && (
+          <div style={{ marginBottom: "32px" }}>
+            <div style={{ fontSize: "11px", fontWeight: 700, color: "#94A3B8", marginBottom: "10px", textTransform: "uppercase", letterSpacing: "1.5px" }}>📼 Geçmiş Videolarım</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: "12px" }}>
+              {history.map(v => (
+                <div key={v.id} className="card" style={{ borderRadius: "12px", overflow: "hidden", border: "1px solid #F1F5F9", background: "#fff" }}>
+                  <video controls style={{ width: "100%", height: "130px", objectFit: "cover", display: "block" }} src={v.url} />
+                  <div style={{ padding: "10px" }}>
+                    <div style={{ fontSize: "12px", fontWeight: 600, color: "#0F172A", marginBottom: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.title || "Video"}</div>
+                    <div style={{ fontSize: "10px", color: "#94A3B8", marginBottom: "6px" }}>{new Date(v.created_at).toLocaleDateString("tr-TR")}</div>
+                    <button onClick={() => handleDownload(v.url, `lagaluga-${v.id.slice(0,8)}.mp4`)} style={{ width: "100%", padding: "6px", borderRadius: "6px", background: "#FFF0F7", color: "#EC4899", border: "none", cursor: "pointer", fontSize: "11px", fontWeight: 600 }}>⬇️ İndir</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* AI ARAÇLAR */}
         <div>

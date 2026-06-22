@@ -1,8 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useEditor } from "../EditorProvider";
-
-const API = "https://lagaluga-backend-production.up.railway.app";
+import { callApi } from "@/lib/api";
 
 export default function ExportModal({ onClose, userId }: { onClose: () => void; userId: string }) {
   const { timeline } = useEditor();
@@ -16,17 +15,15 @@ export default function ExportModal({ onClose, userId }: { onClose: () => void; 
     setStatus("pending");
     setMessage("Video oluşturuluyor...");
     try {
-      const res = await fetch(`${API}/editor/render`, {
+      const data = await callApi('/editor/render', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ timeline, user_id: userId }),
       });
-      const data = await res.json();
       if (!data.task_id) { setStatus("failed"); setMessage(data.message || "Render başlatılamadı."); return; }
       pollRef.current = setInterval(async () => {
         try {
-          const r = await fetch(`${API}/projects/task/${data.task_id}`);
-          const d = await r.json();
+          const d = await callApi(`/projects/task/${data.task_id}`);
           if (d.status === "completed") {
             clearInterval(pollRef.current!);
             setStatus("done");

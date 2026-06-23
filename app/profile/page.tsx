@@ -46,6 +46,11 @@ export default function Profile() {
     if (!deleteConfirm) { setDeleteConfirm(true); return; }
     setLoading(true);
     const supabase = getSupabase();
+    // Supabase client-side silme için admin yetkisi gerekir.
+    // Profil verisini sil, sonra oturumu kapat.
+    try {
+      await (supabase as any).from("profiles").delete().eq("id", user.id);
+    } catch {}
     await supabase.auth.signOut();
     router.push("/auth");
   }

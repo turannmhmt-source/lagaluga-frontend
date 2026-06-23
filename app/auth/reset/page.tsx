@@ -12,8 +12,9 @@ export default function ResetPassword() {
     if (!email.trim()) return;
     setLoading(true); setError("");
     const supabase = getSupabase();
+    const base = typeof window !== "undefined" ? window.location.origin : "https://lagaluga-frontend.vercel.app";
     const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: "https://lagaluga-frontend.vercel.app/auth/update-password",
+      redirectTo: `${base}/auth/update-password`,
     });
     setLoading(false);
     if (err) setError(err.message);

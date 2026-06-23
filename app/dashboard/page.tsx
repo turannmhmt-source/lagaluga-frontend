@@ -171,24 +171,38 @@ export default function Dashboard() {
 
   const [renderTaskId, setRenderTaskId] = useState<string | null>(null);
   const renderPollRef = useRef<any>(null);
+  const pollErrorCountRef = useRef(0);
 
   const pollTask = useCallback(async (taskId: string) => {
     try {
       const data = await callApi(`/projects/task/${taskId}`);
+      pollErrorCountRef.current = 0;
       if (data.status === "completed") {
         clearInterval(pollRef.current); pollRef.current = null;
+        if (analyzeTimeoutRef.current) { clearTimeout(analyzeTimeoutRef.current); analyzeTimeoutRef.current = null; }
         setIsAnalyzing(false); setAnalyzeStep("");
         setScenarios(data.result?.scenarios || []);
         setPageScreenshots(data.result?.screenshots || []);
       } else if (data.status === "scrape_failed") {
         clearInterval(pollRef.current); pollRef.current = null;
+        if (analyzeTimeoutRef.current) { clearTimeout(analyzeTimeoutRef.current); analyzeTimeoutRef.current = null; }
         setIsAnalyzing(false); setAnalyzeStep(""); setScrapeFailed(true);
       } else if (data.status === "failed") {
         clearInterval(pollRef.current); pollRef.current = null;
+        if (analyzeTimeoutRef.current) { clearTimeout(analyzeTimeoutRef.current); analyzeTimeoutRef.current = null; }
         setIsAnalyzing(false); setAnalyzeStep("");
         setError("Analiz başarısız oldu.");
       }
-    } catch (e) { console.error(e); }
+    } catch {
+      pollErrorCountRef.current += 1;
+      if (pollErrorCountRef.current >= 5) {
+        clearInterval(pollRef.current); pollRef.current = null;
+        if (analyzeTimeoutRef.current) { clearTimeout(analyzeTimeoutRef.current); analyzeTimeoutRef.current = null; }
+        setIsAnalyzing(false); setAnalyzeStep("");
+        setError("Sunucuya ulaşılamıyor. Lütfen bağlantınızı kontrol edin.");
+        pollErrorCountRef.current = 0;
+      }
+    }
   }, []);
 
   const pollRender = useCallback(async (taskId: string) => {

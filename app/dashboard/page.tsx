@@ -319,6 +319,8 @@ export default function Dashboard() {
       if (data.videos?.length) setVideos(data.videos);
       if (data.images?.length) setImages(data.images);
 
+      setCredits(c => Math.max(0, c - 1));
+
       if (data.task_id) {
         // Async render — poll et
         setRenderTaskId(data.task_id);

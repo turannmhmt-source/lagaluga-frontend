@@ -101,6 +101,7 @@ export default function Dashboard() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toolFileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<any>(null);
+  const renderPollRef = useRef<any>(null);
   const analyzeTimeoutRef = useRef<any>(null);
   const recognitionRef = useRef<any>(null);
   const router = useRouter();
@@ -171,7 +172,6 @@ export default function Dashboard() {
   };
 
   const [renderTaskId, setRenderTaskId] = useState<string | null>(null);
-  const renderPollRef = useRef<any>(null);
   const pollErrorCountRef = useRef(0);
 
   const pollTask = useCallback(async (taskId: string) => {

@@ -100,6 +100,7 @@ export default function Dashboard() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toolFileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<any>(null);
+  const analyzeTimeoutRef = useRef<any>(null);
   const recognitionRef = useRef<any>(null);
   const router = useRouter();
 
@@ -148,6 +149,7 @@ export default function Dashboard() {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       if (renderPollRef.current) clearInterval(renderPollRef.current);
+      if (analyzeTimeoutRef.current) clearTimeout(analyzeTimeoutRef.current);
       if (recognitionRef.current) recognitionRef.current.stop();
     };
   }, []);
@@ -216,8 +218,8 @@ export default function Dashboard() {
 
     // Kullanıcı "https://site.com tanıtım yap" gibi karışık metin girebilir
     // → URL'yi ayıkla, geri kalan metni yok say; format ipuçlarını otomatik algıla
-    const urlMatch = input.match(/https?:\/\/[^\s]+/);
-    const cleanUrl = urlMatch ? urlMatch[0].replace(/[/)]+$/, "") : input.trim();
+    const urlMatch = input.match(/https?:\/\/[^\s),.;!?:]+/);
+    const cleanUrl = urlMatch ? urlMatch[0] : input.trim();
     const isUrl = !!urlMatch;
 
     const FORMAT_HINTS: [string, string][] = [
@@ -256,8 +258,10 @@ export default function Dashboard() {
         }
         setCredits(c => Math.max(0, c - 1));
         pollRef.current = setInterval(() => pollTask(data.task_id), 3000);
-        setTimeout(() => {
+        if (analyzeTimeoutRef.current) clearTimeout(analyzeTimeoutRef.current);
+        analyzeTimeoutRef.current = setTimeout(() => {
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; setIsAnalyzing(false); setAnalyzeStep(""); setError("Sunucu yanıt vermedi. Lütfen tekrar deneyin."); }
+          analyzeTimeoutRef.current = null;
         }, 180000);
       } else if (data.scenarios) {
         setIsAnalyzing(false); setAnalyzeStep("");
@@ -271,8 +275,9 @@ export default function Dashboard() {
 
   const handleRender = async () => {
     if (!selectedId || isRendering) return;
-    setIsRendering(true); setVideos([]); setImages([]); setRenderedVideo(""); setRenderMessage(null); setError(null);
     const sel = scenarios?.find(s => s.id === selectedId);
+    if (!sel) { setError("Senaryo bulunamadı. Lütfen tekrar seçin."); return; }
+    setIsRendering(true); setVideos([]); setImages([]); setRenderedVideo(""); setRenderMessage(null); setError(null);
 
     try {
       // Blob URL'leri olan dosyaları önce backend'e yükle

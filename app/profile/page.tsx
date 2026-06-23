@@ -39,7 +39,7 @@ export default function Profile() {
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     setLoading(false);
     if (error) { setIsError(true); setMessage(error.message); }
-    else { setMessage("Şifre başarıyla güncellendi!"); setNewPassword(""); setConfirmPassword(""); }
+    else { setIsError(false); setMessage("Şifre başarıyla güncellendi!"); setNewPassword(""); setConfirmPassword(""); setTimeout(() => setMessage(""), 4000); }
   }
 
   async function handleDeleteAccount() {

@@ -93,6 +93,7 @@ export default function Dashboard() {
   const [trendingLoaded, setTrendingLoaded] = useState(false);
   const [searchVideos, setSearchVideos] = useState<string[]>([]);
   const [searchImages, setSearchImages] = useState<string[]>([]);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [history, setHistory] = useState<{ id: string; title: string; url: string; created_at: string }[]>([]);
   const [editingScenario, setEditingScenario] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -283,7 +284,11 @@ export default function Dashboard() {
       } else throw new Error("Geçersiz yanıt");
     } catch (e: any) {
       setIsAnalyzing(false); setAnalyzeStep("");
-      setError(`Hata: ${e.message}`);
+      if (e.message?.includes("Kredi yetersiz") || e.message?.includes("402")) {
+        setShowUpgradeModal(true);
+      } else {
+        setError(`Hata: ${e.message}`);
+      }
     }
   };
 
@@ -307,7 +312,7 @@ export default function Dashboard() {
       const data = await callApi(`/scenarios/${selectedId}/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: input, format, title: sel?.title || "", summary: sel?.summary || "", duration: sel?.duration || "0:45", add_voice: addVoice, user_media: uploadedUrls, background_music: bgMusic === "none" ? "" : bgMusic, music_volume: musicVolume, screenshots: pageScreenshots })
+        body: JSON.stringify({ url: input, format, title: sel?.title || "", summary: sel?.summary || "", duration: sel?.duration || "0:45", add_voice: addVoice, user_media: uploadedUrls, background_music: bgMusic === "none" ? "" : bgMusic, music_volume: musicVolume, screenshots: pageScreenshots, user_id: user?.id || "" })
       });
 
       // Hemen gelen stok video listesini göster
@@ -333,8 +338,12 @@ export default function Dashboard() {
         setIsRendering(false);
       }
     } catch (e: any) {
-      setError(`Video üretilemedi: ${e.message}`);
       setIsRendering(false);
+      if (e.message?.includes("Kredi yetersiz") || e.message?.includes("402")) {
+        setShowUpgradeModal(true);
+      } else {
+        setError(`Video üretilemedi: ${e.message}`);
+      }
     }
   };
 
@@ -629,6 +638,7 @@ export default function Dashboard() {
         <div style={{ fontSize: "22px", fontWeight: 900, color: "#0F172A" }}>laga<span style={{ color: "#EC4899" }}>luga</span></div>
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           <div style={{ background: "#FFF0F7", border: "1px solid rgba(236,72,153,0.2)", borderRadius: "100px", padding: "6px 16px", fontSize: "13px", color: "#EC4899", fontWeight: 700 }}>⚡ {credits} Kredi</div>
+          {credits <= 0 && <button onClick={() => setShowUpgradeModal(true)} style={{ padding: "6px 14px", borderRadius: "100px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: 700 }}>🚀 Plan Yükselt</button>}
           <a href="/editor" style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", cursor: "pointer", fontSize: "13px", fontWeight: 700, textDecoration: "none" }}>🎬 Video Editörü</a>
           <a href="/profile" style={{ fontSize: "13px", color: "#64748B", textDecoration: "none", padding: "8px 12px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff" }}>👤 {user.email}</a>
           <button onClick={handleLogout} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "13px", color: "#64748B" }}>Çıkış</button>
@@ -976,6 +986,57 @@ export default function Dashboard() {
         </div>
 
       </div>
+
+      {/* UPGRADE MODAL */}
+      {showUpgradeModal && (
+        <div onClick={() => setShowUpgradeModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "24px", padding: "40px", maxWidth: "480px", width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+            <div style={{ textAlign: "center", marginBottom: "28px" }}>
+              <div style={{ fontSize: "48px", marginBottom: "12px" }}>⚡</div>
+              <div style={{ fontSize: "22px", fontWeight: 800, color: "#0F172A", marginBottom: "8px" }}>Krediniz Bitti</div>
+              <div style={{ fontSize: "14px", color: "#64748B", lineHeight: 1.6 }}>Video üretmeye devam etmek için bir plan seçin.</div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "20px" }}>
+              <a
+                href="https://www.shopier.com/lagaluga/aylik"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ display: "block", padding: "20px", borderRadius: "16px", border: "2px solid #EC4899", background: "#FFF0F7", textDecoration: "none", cursor: "pointer" }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontSize: "16px", fontWeight: 800, color: "#0F172A" }}>Aylık Plan</div>
+                    <div style={{ fontSize: "13px", color: "#64748B", marginTop: "4px" }}>999 kredi · Tüm özellikler</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: "22px", fontWeight: 900, color: "#EC4899" }}>₺300</div>
+                    <div style={{ fontSize: "11px", color: "#94A3B8" }}>/ay</div>
+                  </div>
+                </div>
+              </a>
+              <a
+                href="https://www.shopier.com/lagaluga/yillik"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ display: "block", padding: "20px", borderRadius: "16px", border: "2px solid #F97316", background: "#FFF7ED", textDecoration: "none", cursor: "pointer", position: "relative" }}
+              >
+                <div style={{ position: "absolute", top: "-10px", right: "16px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", fontSize: "11px", fontWeight: 700, padding: "3px 10px", borderRadius: "100px" }}>EN AVANTAJLI</div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontSize: "16px", fontWeight: 800, color: "#0F172A" }}>Yıllık Plan</div>
+                    <div style={{ fontSize: "13px", color: "#64748B", marginTop: "4px" }}>999 kredi · Tüm özellikler · 2 ay ücretsiz</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: "22px", fontWeight: 900, color: "#F97316" }}>₺2500</div>
+                    <div style={{ fontSize: "11px", color: "#94A3B8" }}>/yıl</div>
+                  </div>
+                </div>
+              </a>
+            </div>
+            <button onClick={() => setShowUpgradeModal(false)} style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "14px", color: "#64748B", fontWeight: 600 }}>Kapat</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

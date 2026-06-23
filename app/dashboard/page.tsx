@@ -213,13 +213,13 @@ export default function Dashboard() {
       if (!done) return;
       clearInterval(renderPollRef.current); renderPollRef.current = null;
       setIsRendering(false); setRenderTaskId(null);
-      if (data.status === "failed") { setError("Video üretilemedi. Lütfen tekrar deneyin."); return; }
       const result = data.result || {};
-      setRenderMessage(result.message || "");
       if (result.videos?.length) setVideos(result.videos);
       if (result.images?.length) setImages(result.images);
       if (result.rendered_video) setRenderedVideo(result.rendered_video);
-      if (data.status === "partial" && !result.rendered_video) setError("Video kısmen oluştu — stok görsel bulunamadı.");
+      setRenderMessage(result.message || "");
+      if (data.status === "failed") { setError("Video işlenemedi. Stok görselleri aşağıdan indirebilirsiniz."); return; }
+      if (data.status === "partial" && !result.rendered_video) setError("Video birleştirilemedi. Stok görselleri aşağıdan indirebilirsiniz.");
     } catch (e) { console.error(e); }
   }, []);
 

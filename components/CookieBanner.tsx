@@ -22,7 +22,7 @@ export default function CookieBanner() {
         <button onClick={accept} style={{ padding: "9px 20px", borderRadius: "8px", background: "linear-gradient(135deg,#EC4899,#F97316)", color: "#fff", border: "none", cursor: "pointer", fontSize: "13px", fontWeight: 700, whiteSpace: "nowrap" }}>
           Kabul Et
         </button>
-        <button onClick={() => setVisible(false)} style={{ padding: "9px 16px", borderRadius: "8px", background: "transparent", color: "#64748B", border: "1px solid #334155", cursor: "pointer", fontSize: "13px", whiteSpace: "nowrap" }}>
+        <button onClick={accept} style={{ padding: "9px 16px", borderRadius: "8px", background: "transparent", color: "#64748B", border: "1px solid #334155", cursor: "pointer", fontSize: "13px", whiteSpace: "nowrap" }}>
           Kapat
         </button>
       </div>

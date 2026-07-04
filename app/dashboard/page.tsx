@@ -382,6 +382,7 @@ export default function Dashboard() {
 
     const form = new FormData();
     if (toolMedia?.file) form.append("file", toolMedia.file);
+    form.append("user_id", user?.id || "");
 
     switch (tool.key) {
       case "object-remove":
@@ -409,12 +410,17 @@ export default function Dashboard() {
         setToolResult(data.message || "İşlem tamamlandı.");
         if (data.result_url) setToolResultUrl(data.result_url);
         if (data.results && Object.keys(data.results).length > 0) setToolResultsMap(data.results);
+        setCredits(c => Math.max(0, c - 1));
       } else {
         setToolError(data.message || "İşlem başarısız oldu. Lütfen tekrar deneyin.");
       }
     } catch (e: any) {
       console.error("Hata:", e);
-      setToolError(e?.message || "İşlem sırasında hata oluştu. Lütfen tekrar deneyin.");
+      if (e.message?.includes("Kredi yetersiz") || e.message?.includes("402")) {
+        setShowUpgradeModal(true);
+      } else {
+        setToolError(e?.message || "İşlem sırasında hata oluştu. Lütfen tekrar deneyin.");
+      }
     } finally {
       setIsProcessingTool(false);
     }

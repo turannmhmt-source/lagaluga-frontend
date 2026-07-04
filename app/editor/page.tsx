@@ -178,6 +178,7 @@ export default function Editor() {
       const form = new FormData();
       form.append("text", voiceText);
       form.append("voice", voiceVoice);
+      form.append("user_id", user?.id || "");
       const d = await callApi('/tools/voiceover', { method: "POST", body: form });
       if (d.status === "completed") setToolResult(d.result_url);
       else setToolError(d.message || "İşlem başarısız.");
@@ -192,6 +193,7 @@ export default function Editor() {
       const form = new FormData();
       form.append("file", file);
       form.append("language", subtitleLang);
+      form.append("user_id", user?.id || "");
       const d = await callApi('/tools/subtitle', { method: "POST", body: form });
       if (d.status === "completed") setToolResult(d.result_url);
       else setToolError(d.message || "İşlem başarısız.");
@@ -206,6 +208,7 @@ export default function Editor() {
       const form = new FormData();
       form.append("file", file);
       form.append("description", "arka planı kaldır");
+      form.append("user_id", user?.id || "");
       const d = await callApi('/tools/bg-remove', { method: "POST", body: form });
       if (d.status === "completed") setToolResult(d.result_url);
       else setToolError(d.message || "İşlem başarısız.");

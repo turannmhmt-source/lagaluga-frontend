@@ -28,7 +28,7 @@ export default function Home() {
   }, [charIndex, isDeleting, phraseIndex]);
 
   return (
-    <div style={{fontFamily:"'Inter',sans-serif",background:"#FAFAFA",color:"#1a1a2e",minHeight:"100vh"}}>
+    <div className="page-fade-in" style={{fontFamily:"'Inter',sans-serif",background:"#FAFAFA",color:"#1a1a2e",minHeight:"100vh"}}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');*{box-sizing:border-box;margin:0;padding:0;}@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}`}</style>
 
       {/* NAV */}
@@ -98,7 +98,7 @@ export default function Home() {
             {icon:"💬",title:"Otomatik Altyazı",desc:"AI ile saniyeler içinde altyazı oluşturun ve videoya ekleyin."},
             {icon:"📅",title:"Otomatik Zamanlayıcı",desc:"İçeriklerinizi planlayın, belirlediğiniz tarihte otomatik yayınlansın."},
           ].map(({icon,title,desc})=>(
-            <div key={title} style={{background:"#fff",border:"1px solid #F1F5F9",borderRadius:"16px",padding:"28px",boxShadow:"0 2px 8px rgba(0,0,0,0.04)"}}>
+            <div key={title} className="card" style={{background:"#fff",border:"1px solid #F1F5F9",borderRadius:"16px",padding:"28px",boxShadow:"0 2px 8px rgba(0,0,0,0.04)"}}>
               <div style={{width:"48px",height:"48px",borderRadius:"12px",background:"#FFF0F7",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"24px",marginBottom:"16px"}}>{icon}</div>
               <div style={{fontSize:"17px",fontWeight:700,color:"#0F172A",marginBottom:"8px"}}>{title}</div>
               <div style={{fontSize:"14px",color:"#64748B",lineHeight:1.7}}>{desc}</div>

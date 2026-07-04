@@ -44,7 +44,7 @@ export default function AuthClient() {
   const isSuccess = message.includes("Aktivasyon");
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#FFF0F7,#FFF7ED)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Inter,sans-serif", padding: "20px" }}>
+    <div className="page-fade-in" style={{ minHeight: "100vh", background: "linear-gradient(135deg,#FFF0F7,#FFF7ED)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Inter,sans-serif", padding: "20px" }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <div style={{ background: "#fff", borderRadius: "24px", padding: "48px", width: "100%", maxWidth: "420px", boxShadow: "0 20px 60px rgba(236,72,153,0.12)" }}>
         <div style={{ textAlign: "center", marginBottom: "32px" }}>

@@ -283,7 +283,7 @@ export default function Editor() {
   if (!user) return <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#FFF0F7", fontSize: "16px", color: pink, fontFamily: "Inter,system-ui,sans-serif", fontWeight: 700 }}>Yükleniyor...</div>;
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", fontFamily: "Inter,system-ui,sans-serif", background: "#FFF5FB", color: "#0F172A", overflow: "hidden" }}>
+    <div className="page-fade-in" style={{ height: "100vh", display: "flex", flexDirection: "column", fontFamily: "Inter,system-ui,sans-serif", background: "#FFF5FB", color: "#0F172A", overflow: "hidden" }}>
 
       {/* ── TOP BAR ── */}
       <div style={{ height: "52px", background: "#fff", borderBottom: "1.5px solid #FCE7F3", display: "flex", alignItems: "center", padding: "0 16px", gap: "12px", flexShrink: 0, boxShadow: "0 1px 8px rgba(236,72,153,0.08)" }}>

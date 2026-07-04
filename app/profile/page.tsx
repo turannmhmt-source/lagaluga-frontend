@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
+import { callApi } from "@/lib/api";
 
 export default function Profile() {
   const [user, setUser] = useState<any>(null);
@@ -46,11 +47,18 @@ export default function Profile() {
     if (!deleteConfirm) { setDeleteConfirm(true); return; }
     setLoading(true);
     const supabase = getSupabase();
-    // Supabase client-side silme için admin yetkisi gerekir.
-    // Profil verisini sil, sonra oturumu kapat.
+    const { data: { session } } = await supabase.auth.getSession();
     try {
-      await (supabase as any).from("profiles").delete().eq("id", user.id);
-    } catch {}
+      await callApi("/auth/account", {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+    } catch (e: any) {
+      setLoading(false);
+      setIsError(true);
+      setMessage(e.message || "Hesap silinemedi. Lütfen tekrar deneyin.");
+      return;
+    }
     await supabase.auth.signOut();
     router.push("/auth");
   }
@@ -63,7 +71,7 @@ export default function Profile() {
   if (!user) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", fontFamily: "Inter,sans-serif", color: "#EC4899" }}>Yükleniyor...</div>;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F8FAFC", fontFamily: "Inter,sans-serif" }}>
+    <div className="page-fade-in" style={{ minHeight: "100vh", background: "#F8FAFC", fontFamily: "Inter,sans-serif" }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       <nav style={{ background: "rgba(255,255,255,0.97)", backdropFilter: "blur(12px)", borderBottom: "1px solid #F1F5F9", padding: "14px 40px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 100 }}>
@@ -78,7 +86,7 @@ export default function Profile() {
         <div style={{ fontSize: "24px", fontWeight: 800, color: "#0F172A", marginBottom: "24px" }}>👤 Profilim</div>
 
         {/* Hesap Bilgileri */}
-        <div style={{ background: "#fff", borderRadius: "16px", padding: "24px", border: "1px solid #F1F5F9", boxShadow: "0 2px 8px rgba(0,0,0,0.04)", marginBottom: "16px" }}>
+        <div className="card" style={{ background: "#fff", borderRadius: "16px", padding: "24px", border: "1px solid #F1F5F9", boxShadow: "0 2px 8px rgba(0,0,0,0.04)", marginBottom: "16px" }}>
           <div style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A", marginBottom: "16px" }}>Hesap Bilgileri</div>
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "#F8FAFC", borderRadius: "10px" }}>
@@ -97,7 +105,7 @@ export default function Profile() {
         </div>
 
         {/* Şifre Değiştir */}
-        <div style={{ background: "#fff", borderRadius: "16px", padding: "24px", border: "1px solid #F1F5F9", boxShadow: "0 2px 8px rgba(0,0,0,0.04)", marginBottom: "16px" }}>
+        <div className="card" style={{ background: "#fff", borderRadius: "16px", padding: "24px", border: "1px solid #F1F5F9", boxShadow: "0 2px 8px rgba(0,0,0,0.04)", marginBottom: "16px" }}>
           <div style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A", marginBottom: "16px" }}>🔒 Şifre Değiştir</div>
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             <div>
@@ -121,7 +129,7 @@ export default function Profile() {
         </div>
 
         {/* Hesap Sil */}
-        <div style={{ background: "#fff", borderRadius: "16px", padding: "24px", border: "1px solid #FEE2E2", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+        <div className="card" style={{ background: "#fff", borderRadius: "16px", padding: "24px", border: "1px solid #FEE2E2", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
           <div style={{ fontSize: "14px", fontWeight: 700, color: "#DC2626", marginBottom: "8px" }}>⚠️ Hesabı Sil</div>
           <div style={{ fontSize: "13px", color: "#64748B", marginBottom: "16px" }}>Bu işlem geri alınamaz. Tüm verileriniz silinecektir.</div>
           {deleteConfirm && (

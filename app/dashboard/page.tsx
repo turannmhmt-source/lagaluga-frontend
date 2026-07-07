@@ -1,4 +1,3 @@
-// v4
 "use client";
 export const dynamic = "force-dynamic";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -289,6 +288,66 @@ export default function Dashboard() {
       } else {
         setError(`Hata: ${e.message}`);
       }
+    }
+  };
+
+  const handleQuickPost = async () => {
+    if (!input.trim() || isAnalyzing || isRendering || credits <= 0) return;
+    setIsAnalyzing(true); setAnalyzeStep("Site analiz ediliyor...");
+    setScenarios(null); setSelectedId(null); setError(null);
+    setScrapeFailed(false); setVideos([]); setImages([]);
+    setRenderedVideo(""); setRenderMessage(null); setPageScreenshots([]);
+
+    const urlMatch = input.match(/https?:\/\/[^\s),.;!?:]+/);
+    const cleanUrl = urlMatch ? urlMatch[0] : input.trim();
+    const urlToSend = urlMatch ? cleanUrl : `topic:${cleanUrl}`;
+
+    try {
+      const analyzeData = await callApi('/projects/analyze', {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: urlToSend, format, user_id: user?.id || "", manual_description: "" })
+      });
+
+      const scenarioList = analyzeData.scenarios || analyzeData.result?.scenarios || [];
+      const screenshots = analyzeData.screenshots || analyzeData.result?.screenshots || [];
+      if (!scenarioList.length) throw new Error("Senaryo oluşturulamadı");
+
+      const sel = scenarioList[0];
+      setScenarios(scenarioList);
+      setSelectedId(sel.id);
+      setPageScreenshots(screenshots);
+      setIsAnalyzing(false); setAnalyzeStep("");
+      setCredits(c => Math.max(0, c - 1));
+
+      // Render
+      setIsRendering(true); setRenderMessage("Video hazırlanıyor...");
+      const renderData = await callApi(`/scenarios/${sel.id}/render`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: input, format, title: sel.title || "", summary: sel.summary || "", duration: sel.duration || "0:45", add_voice: false, user_media: [], background_music: "", music_volume: 50, screenshots, user_id: user?.id || "" })
+      });
+
+      if (renderData.videos?.length) setVideos(renderData.videos);
+      if (renderData.images?.length) setImages(renderData.images);
+      setCredits(c => Math.max(0, c - 1));
+
+      if (renderData.task_id) {
+        setRenderTaskId(renderData.task_id);
+        setRenderMessage("Video işleniyor, lütfen bekleyin...");
+        renderPollRef.current = setInterval(() => pollRender(renderData.task_id), 4000);
+        setTimeout(() => {
+          if (renderPollRef.current) { clearInterval(renderPollRef.current); renderPollRef.current = null; setIsRendering(false); setRenderTaskId(null); }
+        }, 180000);
+      } else {
+        setRenderMessage(renderData.message || "");
+        if (renderData.rendered_video) setRenderedVideo(renderData.rendered_video);
+        setIsRendering(false);
+      }
+    } catch (e: any) {
+      setIsAnalyzing(false); setAnalyzeStep(""); setIsRendering(false);
+      if (e.message?.includes("402")) { setShowUpgradeModal(true); }
+      else { setError(`Hata: ${e.message}`); }
     }
   };
 
@@ -681,6 +740,16 @@ export default function Dashboard() {
               {isAnalyzing ? "Analiz ediliyor..." : credits <= 0 ? "Kredi bitti" : "Analiz Et →"}
             </button>
           </div>
+
+          {/* HIZLI SOSYAL MEDYA GÖNDERİSİ */}
+          <button
+            onClick={handleQuickPost}
+            disabled={!input.trim() || isAnalyzing || isRendering || credits <= 0}
+            style={{ marginTop: "10px", width: "100%", padding: "13px", borderRadius: "10px", border: "none", background: (!input.trim() || isAnalyzing || isRendering || credits <= 0) ? "#E2E8F0" : "linear-gradient(135deg,#7C3AED,#2563EB)", color: (!input.trim() || isAnalyzing || isRendering || credits <= 0) ? "#94A3B8" : "#fff", fontSize: "15px", fontWeight: 800, cursor: (!input.trim() || isAnalyzing || isRendering || credits <= 0) ? "not-allowed" : "pointer" }}
+          >
+            {isAnalyzing ? "⏳ Analiz ediliyor..." : isRendering ? "⏳ Video hazırlanıyor..." : "⚡ Tek Tıkla Sosyal Medya Gönderisi Oluştur"}
+          </button>
+          <div style={{ textAlign: "center", fontSize: "11px", color: "#94A3B8", marginTop: "6px" }}>URL yapıştır → AI analiz eder → Video otomatik hazırlanır</div>
 
           {isListening && <div style={{ marginTop: "8px", fontSize: "13px", color: "#EC4899", fontWeight: 600 }}>🔴 Dinleniyor... Konuşun</div>}
 
